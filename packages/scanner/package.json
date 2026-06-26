@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@pcm/core": "workspace:*",
+    "@pcm/engine": "workspace:*",
+    "@pcm/plugin-python": "workspace:*",
     "@pcm/plugin-typescript": "workspace:*"
   },
   "devDependencies": {

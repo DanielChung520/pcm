@@ -95,6 +95,39 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['project'],
       },
     },
+    {
+      name: 'pcm_impact',
+      description: '影響分析：改了某符號會影響哪些檔案',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          project: { type: 'string', description: '專案名稱' },
+          target: { type: 'string', description: '目標符號名稱或檔案路徑' },
+        },
+        required: ['project', 'target'],
+      },
+    },
+    {
+      name: 'pcm_cycles',
+      description: '檢測專案中的循環依賴',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          project: { type: 'string', description: '專案名稱' },
+        },
+        required: ['project'],
+      },
+    },
+    {
+      name: 'pcm_scan_all',
+      description: '掃描所有已註冊的本地專案目錄',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          force: { type: 'boolean', default: false, description: '強制重新掃描' },
+        },
+      },
+    },
   ],
 }));
 
@@ -230,6 +263,43 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
         const hotspots = graph.stats.hotspots.slice(0, limit);
         return { content: [{ type: 'text', text: JSON.stringify(hotspots, null, 2) }] };
+      }
+
+      case 'pcm_impact': {
+        const { project: pImpact, target } = args as { project: string; target: string };
+        const projImp = (await storage.listProjects()).find(p => p.name === pImpact || p.id === pImpact);
+        if (!projImp) return { content: [{ type: 'text', text: `找不到專案 "${pImpact}"` }], isError: true };
+        const { ImpactAnalyzer } = await import('@pcm/scanner');
+        const analyzer = new ImpactAnalyzer(storage);
+        const report = await analyzer.analyze(projImp.id, target);
+        return { content: [{ type: 'text', text: JSON.stringify(report, null, 2) }] };
+      }
+
+      case 'pcm_cycles': {
+        const { project: pCycle } = args as { project: string };
+        const projCyc = (await storage.listProjects()).find(p => p.name === pCycle || p.id === pCycle);
+        if (!projCyc) return { content: [{ type: 'text', text: `找不到專案 "${pCycle}"` }], isError: true };
+        const { detectCycles } = await import('@pcm/scanner');
+        const cycles = await detectCycles(storage, projCyc.id);
+        return { content: [{ type: 'text', text: JSON.stringify({ project: pCycle, cycles }, null, 2) }] };
+      }
+
+      case 'pcm_scan_all': {
+        const { force: forceAll } = args as { force: boolean };
+        const allProjects = await storage.listProjects();
+        const results: unknown[] = [];
+        for (const p of allProjects) {
+          if (p.source.type !== 'local') continue;
+          if (!fs.existsSync(p.source.location)) continue;
+          console.error(`[MCP] Scanning ${p.name}...`);
+          try {
+            const g = await scanner.scan(p, !!forceAll);
+            results.push({ project: p.name, status: 'ok', files: g.stats.fileCount });
+          } catch (err) {
+            results.push({ project: p.name, status: 'error', error: String(err) });
+          }
+        }
+        return { content: [{ type: 'text', text: JSON.stringify({ scanned: results.length, results }, null, 2) }] };
       }
 
       default:

@@ -1,51 +1,70 @@
 import type { Project, Symbol, Relationship, CodeGraph, SymbolFilter, RelationshipFilter, StorageAdapter } from '@pcm/core';
 
-/**
- * SeaweedFS 儲存適配器
- * 透過 S3-compatible API 讀取專案檔案
- * 數據結構仍儲存在本機 SQLite，原始檔案從 SeaweedFS 讀取
- */
-export class SeaweedFSAdapter {
-  readonly name = 'seaweedfs';
-  private endpoint: string;
-  private accessKey: string;
-  private secretKey: string;
+interface S3Config {
+  endpoint: string;
+  accessKey: string;
+  secretKey: string;
+  region?: string;
+}
 
-  constructor(config: {
-    endpoint: string;
-    accessKey: string;
-    secretKey: string;
-  }) {
-    this.endpoint = config.endpoint;
-    this.accessKey = config.accessKey;
-    this.secretKey = config.secretKey;
+export class SeaweedFSFileStore {
+  readonly name = 'seaweedfs';
+  private config: S3Config;
+  private client: any = null;
+
+  constructor(config: S3Config) {
+    this.config = { region: 'us-east-1', ...config };
   }
 
   async connect(): Promise<void> {
-    // TODO: Phase 2 實作 S3 API 連線
-    // const { S3Client } = await import('@aws-sdk/client-s3');
-    // this.client = new S3Client({
-    //   endpoint: this.endpoint,
-    //   region: 'us-east-1',
-    //   credentials: { accessKeyId: this.accessKey, secretAccessKey: this.secretKey },
-    //   forcePathStyle: true,
-    // });
+    const { S3Client } = await import('@aws-sdk/client-s3');
+    this.client = new S3Client({
+      endpoint: this.config.endpoint,
+      region: this.config.region,
+      credentials: {
+        accessKeyId: this.config.accessKey,
+        secretAccessKey: this.config.secretKey,
+      },
+      forcePathStyle: true,
+    });
   }
 
-  /** 從 SeaweedFS 讀取檔案內容 */
   async readFile(bucket: string, path: string): Promise<string | null> {
-    // TODO: Phase 2 實作
-    // const { GetObjectCommand } = await import('@aws-sdk/client-s3');
-    // const response = await this.client.send(new GetObjectCommand({
-    //   Bucket: bucket, Key: path
-    // }));
-    // return await response.Body?.transformToString() ?? null;
-    return null;
+    if (!this.client) await this.connect();
+    const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+    try {
+      const response = await this.client.send(new GetObjectCommand({
+        Bucket: bucket, Key: path,
+      }));
+      return await response.Body?.transformToString() ?? null;
+    } catch (err: any) {
+      if (err.name === 'NoSuchKey') return null;
+      throw err;
+    }
   }
 
-  /** 列出 bucket 中的檔案 */
+  async writeFile(bucket: string, path: string, content: string): Promise<void> {
+    if (!this.client) await this.connect();
+    const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+    await this.client.send(new PutObjectCommand({
+      Bucket: bucket, Key: path, Body: content,
+    }));
+  }
+
   async listFiles(bucket: string, prefix: string): Promise<string[]> {
-    // TODO
-    return [];
+    if (!this.client) await this.connect();
+    const { ListObjectsV2Command } = await import('@aws-sdk/client-s3');
+    const response = await this.client.send(new ListObjectsV2Command({
+      Bucket: bucket, Prefix: prefix,
+    }));
+    return (response.Contents || []).map((obj: any) => obj.Key as string);
+  }
+
+  async deleteFile(bucket: string, path: string): Promise<void> {
+    if (!this.client) await this.connect();
+    const { DeleteObjectCommand } = await import('@aws-sdk/client-s3');
+    await this.client.send(new DeleteObjectCommand({
+      Bucket: bucket, Key: path,
+    }));
   }
 }

@@ -15,16 +15,8 @@ import type {
 import { TypeScriptLanguagePlugin } from '@pcm/plugin-typescript';
 
 interface ScannerConfig {
-  /** 是否包含 node_modules 等目錄 */
   includeNodeModules: boolean;
-  /** 支援的副檔名 */
-  extensions: string[];
 }
-
-const DEFAULT_CONFIG: ScannerConfig = {
-  includeNodeModules: false,
-  extensions: ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'],
-};
 
 const IGNORE_DIRS = new Set([
   'node_modules', '.git', 'dist', 'build', '.next',
@@ -42,10 +34,10 @@ export class ScannerPlugin implements FeaturePlugin {
   description = '掃描專案原始碼，建立符號圖譜與依賴關係';
 
   private languagePlugins: Map<string, LanguagePlugin> = new Map();
-  private config: ScannerConfig;
+  private includeNodeModules: boolean = false;
 
-  constructor(config?: Partial<ScannerConfig>) {
-    this.config = { ...DEFAULT_CONFIG, ...config };
+  constructor(opts?: { includeNodeModules?: boolean }) {
+    if (opts?.includeNodeModules) this.includeNodeModules = true;
   }
 
   async onLoad(): Promise<void> {
@@ -53,6 +45,23 @@ export class ScannerPlugin implements FeaturePlugin {
     for (const ext of tsPlugin.extensions) {
       this.languagePlugins.set(ext, tsPlugin);
     }
+    try {
+      const { PythonLanguagePlugin } = await import('@pcm/plugin-python');
+      const pyPlugin = new PythonLanguagePlugin();
+      for (const ext of pyPlugin.extensions) {
+        this.languagePlugins.set(ext, pyPlugin);
+      }
+    } catch {
+      // Python plugin not installed; silently continue
+    }
+  }
+
+  private getExtensions(): string[] {
+    const exts = new Set<string>();
+    for (const plugin of this.languagePlugins.values()) {
+      for (const ext of plugin.extensions) exts.add(ext);
+    }
+    return Array.from(exts);
   }
 
   async query(project: Project, params: Record<string, unknown>): Promise<CodeGraph> {
@@ -182,7 +191,7 @@ export class ScannerPlugin implements FeaturePlugin {
         const resolvedPath = this.resolveImportPath(
           importSource,
           rel.metadata._sourceFile as string || '',
-          this.config.extensions,
+           this.getExtensions(),
         );
         const targetFile = fileIndex.get(resolvedPath);
         if (targetFile) {
@@ -275,7 +284,7 @@ export class ScannerPlugin implements FeaturePlugin {
         this.collectFiles(rootDir, fullPath, files);
       } else if (entry.isFile()) {
         const ext = path.extname(entry.name);
-        if (this.config.extensions.includes(ext)) {
+        if (this.getExtensions().includes(ext)) {
           files.push(relPath);
         }
       }

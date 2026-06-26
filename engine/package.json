@@ -1,0 +1,12 @@
+{
+  "name": "pcm-engine",
+  "version": "0.1.0",
+  "main": "pcm-engine.node",
+  "types": "pcm-engine.d.ts",
+  "napi": {
+    "name": "pcm-engine",
+    "triples": {
+      "defaults": true
+    }
+  }
+}

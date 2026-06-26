@@ -1,4 +1,4 @@
-import Parser from 'web-tree-sitter';
+import { Parser, Language } from 'web-tree-sitter';
 import { randomUUID } from 'node:crypto';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
@@ -255,7 +255,7 @@ export class TypeScriptLanguagePlugin implements LanguagePlugin {
     await Parser.init();
     this.tsParser = new Parser();
     const wasmPath = this.resolveWasmPath('tree-sitter-typescript.wasm');
-    const Lang = await Parser.Language.load(wasmPath);
+    const Lang = await Language.load(wasmPath);
     this.tsParser.setLanguage(Lang);
   }
 
@@ -263,7 +263,7 @@ export class TypeScriptLanguagePlugin implements LanguagePlugin {
     await Parser.init();
     this.tsxParser = new Parser();
     const wasmPath = this.resolveWasmPath('tree-sitter-tsx.wasm');
-    const Lang = await Parser.Language.load(wasmPath);
+    const Lang = await Language.load(wasmPath);
     this.tsxParser.setLanguage(Lang);
   }
 
@@ -273,11 +273,11 @@ export class TypeScriptLanguagePlugin implements LanguagePlugin {
     const tsDir = path.dirname(_require.resolve('tree-sitter-typescript/package.json'));
     const jsWasm = path.join(tsDir, 'tree-sitter-javascript.wasm');
     if (fs.existsSync(jsWasm)) {
-      const Lang = await Parser.Language.load(jsWasm);
+      const Lang = await Language.load(jsWasm);
       this.jsParser.setLanguage(Lang);
     } else {
       const wasmPath = this.resolveWasmPath('tree-sitter-typescript.wasm');
-      const Lang = await Parser.Language.load(wasmPath);
+      const Lang = await Language.load(wasmPath);
       this.jsParser.setLanguage(Lang);
     }
   }

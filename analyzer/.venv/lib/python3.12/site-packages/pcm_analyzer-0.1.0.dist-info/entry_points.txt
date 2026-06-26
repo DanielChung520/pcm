@@ -1,0 +1,2 @@
+[console_scripts]
+pcm-analyzer = pcm_analyzer.__main__:main

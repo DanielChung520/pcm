@@ -6,11 +6,15 @@ requires-python = ">=3.11"
 license = {text = "MIT"}
 
 [build-system]
-requires = ["maturin>=1.0,<2.0"]
-build-backend = "maturin"
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
 
 [project.scripts]
-pcm-analyzer = "pcm_analyzer:cli"
+pcm-analyzer = "pcm_analyzer.__main__:main"
 
-[tool.maturin]
-features = ["pyo3/extension-module"]
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.optional-dependencies]
+ml = ["sentence-transformers>=3.0", "numpy>=1.24"]
+rag = ["networkx>=3.0", "scikit-learn>=1.3"]

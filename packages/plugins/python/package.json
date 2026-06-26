@@ -1,0 +1,22 @@
+{
+  "name": "@pcm/plugin-python",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@pcm/core": "workspace:*",
+    "tree-sitter-python": "^0.25.0",
+    "web-tree-sitter": "^0.26.9"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  }
+}

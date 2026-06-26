@@ -1,0 +1,11 @@
+{
+  "name": "@pcm/engine",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.js",
+  "types": "index.d.ts",
+  "scripts": {
+    "build": "node -e \"require('fs').cpSync('../../engine/pcm-engine.node', 'pcm-engine.node')\"",
+    "clean": "rm -f pcm-engine.node"
+  }
+}
