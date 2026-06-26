@@ -8,3 +8,11 @@ __pycache__/
 *.log
 .pcm/
 !.pcm/workspace/
+.venv/
+*.egg-info/
+engine/Cargo.lock
+engine/target/
+web/src-tauri/target/
+web/node_modules/
+web/dist/
+*.node
