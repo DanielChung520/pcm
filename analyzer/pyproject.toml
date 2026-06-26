@@ -1,0 +1,16 @@
+[project]
+name = "pcm-analyzer"
+version = "0.1.0"
+description = "PCM 分析引擎 — Tree-sitter AST、嵌入、GraphRAG"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project.scripts]
+pcm-analyzer = "pcm_analyzer:cli"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]

@@ -1,0 +1,10 @@
+node_modules/
+dist/
+target/
+__pycache__/
+*.pyc
+.env
+*.local
+*.log
+.pcm/
+!.pcm/workspace/
