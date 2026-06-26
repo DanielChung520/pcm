@@ -26,16 +26,19 @@
 pcm/
 ├── packages/
 │   ├── core/              # 微內核：模型、插件系統、事件總線
-│   ├── cli/               # CLI 工具（pcm 命令）
-│   ├── mcp-server/        # MCP Server（AI Agent 接口）
-│   ├── storage/           # 儲存抽象層（SQLite / SeaweedFS）
+│   ├── cli/               # CLI 工具（pcm 命令，8 commands）
+│   ├── mcp-server/        # MCP Server（9 Tools，對接 OpenCode）
+│   ├── storage/           # 儲存層（SQLite, SeaweedFS, ArangoDB adapters）
+│   ├── scanner/           # 掃描器 + 影響分析 + Markdown + LLM 插件
+│   ├── engine/            # Rust napi-rs 原生模組橋接
 │   └── plugins/
-│       └── typescript/    # TS/JS 語言解析器（Tree-sitter）
-├── engine/                # [預留] Rust 查詢引擎
-├── analyzer/              # [預留] Python 分析引擎
-├── web/                   # [預留] Tauri Desktop App
-├── docs/adr/              # 架構決策記錄
-└── package.json           # pnpm workspace root
+│       ├── typescript/    # TS/JS 語言解析器（Tree-sitter）
+│       └── python/        # Python 語言解析器（Tree-sitter）
+├── engine/                # Rust 查詢引擎（napi-rs，已編譯）
+├── analyzer/              # Python AI 層（CodeEmbedder, GraphRAG）
+├── web/                   # Tauri Desktop App（React + D3.js + xterm.js）
+├── docs/adr/              # 4 份架構決策記錄
+└── package.json           # pnpm workspace root（9 packages）
 ```
 
 ## 開發命令
@@ -43,8 +46,8 @@ pcm/
 ```bash
 pnpm build          # 編譯所有套件
 pnpm dev            # 開發模式（CLI）
-pnpm test           # 執行測試
 pnpm -r build       # 遞迴編譯
+node packages/cli/dist/index.js <cmd>   # 執行 CLI
 ```
 
 ## CLI 命令（Agent 友好）
@@ -54,19 +57,21 @@ pnpm -r build       # 遞迴編譯
 | `pcm list` | 列出所有專案 |
 | `pcm scan <project>` | 掃描專案，生成圖譜 |
 | `pcm status [project]` | 查看掃描狀態 |
-| `pcm graph <project>` | 輸出依賴圖 |
+| `pcm graph <project>` | 輸出依賴圖（Mermaid） |
 | `pcm modules <project>` | 列出模組與符號 |
 | `pcm hotspots <project>` | 複雜度熱點 |
+| `pcm impact <project> <target>` | 影響分析 |
+| `pcm cycles <project>` | 循環依賴檢測 |
 
 所有命令支援 `--json` 輸出。進度→stderr，資料→stdout。
 
 ## 開發階段
 
-- [ ] **Phase 0** (目前): CLI + 基本掃描 + Markdown 輸出
-- [ ] **Phase 1**: SQLite 查詢 + 影響分析 + MCP Server 完整
-- [ ] **Phase 2**: 語義搜索 + GraphRAG + Rust/Python 引擎
-- [ ] **Phase 3**: Tauri Desktop App + 圖譜可視化
-- [ ] **Phase 4**: 插件市場 + 生態化
+- [x] **Phase 0**: CLI + 掃描 + Markdown 輸出 ✅
+- [x] **Phase 1**: 影響分析 + 增量更新 + Python 解析器 ✅
+- [x] **Phase 2**: Rust 引擎（napi-rs）+ Python AI（嵌入/GraphRAG）✅
+- [x] **Phase 3**: Tauri Desktop 前端（React+D3.js+xterm.js）✅
+- [ ] **Phase 4**: SeaweedFS/ArangoDB/dllm 整合（進行中）🔄
 
 ## 設計原則
 
