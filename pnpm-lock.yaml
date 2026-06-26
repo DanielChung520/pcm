@@ -137,6 +137,9 @@ importers:
       '@pcm/core':
         specifier: workspace:*
         version: link:../core
+      arangojs:
+        specifier: ^10.3.1
+        version: 10.3.1
       better-sqlite3:
         specifier: ^11.0.0
         version: 11.10.0
@@ -295,8 +298,20 @@ packages:
   '@types/better-sqlite3@7.6.13':
     resolution: {integrity: sha512-NMv9ASNARoKksWtsq/SHakpYAYnhBrQgGD8zkLYk/jaK8jUGn08CfEdTRgYhMypUQAfzSP8W6gNLe0q19/t4VA==}
 
+  '@types/node@20.19.43':
+    resolution: {integrity: sha512-6oYBAi5ikg4Pl+kGsoYtawUMBT2zZMCvPNF7pVLnHZfd1zf38DRiWn/gT01RYCdUqkv7Fhr+C9ot4/tb+2sVvA==}
+
   '@types/node@22.20.0':
     resolution: {integrity: sha512-QWlFW2wf3nTjC13/DqRnBpR4ZO36VJH/JVBkA/vcnmbTBNQIlnObqyqZE1tUR7+Ni23Lda8R1BxMfbXRpCUx5g==}
+
+  arangojs@10.3.1:
+    resolution: {integrity: sha512-lSHnq61JtZTzsce49AuscqoLouFG/7dvH8a4HZOW0UzlZyyptlv0XjgeRFO0ahw1WR8vskYqTStvdf1zWFsA6A==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      undici: '>=5.21.0'
+    peerDependenciesMeta:
+      undici:
+        optional: true
 
   base64-js@1.5.1:
     resolution: {integrity: sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA==}
@@ -818,9 +833,17 @@ snapshots:
     dependencies:
       '@types/node': 22.20.0
 
+  '@types/node@20.19.43':
+    dependencies:
+      undici-types: 6.21.0
+
   '@types/node@22.20.0':
     dependencies:
       undici-types: 6.21.0
+
+  arangojs@10.3.1:
+    dependencies:
+      '@types/node': 20.19.43
 
   base64-js@1.5.1: {}
 

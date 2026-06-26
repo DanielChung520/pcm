@@ -4,6 +4,7 @@ export { generateArchitectureMD, generateModulesMD, generateHotspotsMD };
 export { ImpactAnalyzer, detectCycles } from './impact.js';
 export type { ImpactResult, ImpactReport } from './impact.js';
 export { getGitHash, getChangedFiles, isGitRepo } from './git.js';
+export { LLMPlugin } from './llm.js';
 
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
