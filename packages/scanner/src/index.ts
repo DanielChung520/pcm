@@ -23,6 +23,7 @@ const IGNORE_DIRS = new Set([
   'node_modules', '.git', 'dist', 'build', '.next',
   'coverage', '__pycache__', '.venv', 'venv',
   '.pcm', '.agents',
+  'target',           // Rust build output
 ]);
 
 /**
@@ -53,7 +54,16 @@ export class ScannerPlugin implements FeaturePlugin {
         this.languagePlugins.set(ext, pyPlugin);
       }
     } catch {
-      // Python plugin not installed; silently continue
+      // Python plugin not installed; continue
+    }
+    try {
+      const { RustLanguagePlugin } = await import('@pcm/plugin-rust');
+      const rsPlugin = new RustLanguagePlugin();
+      for (const ext of rsPlugin.extensions) {
+        this.languagePlugins.set(ext, rsPlugin);
+      }
+    } catch {
+      // Rust plugin not installed; continue
     }
   }
 
