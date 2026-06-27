@@ -85,7 +85,9 @@ export async function serveCommand(port: number): Promise<void> {
             const resolvedPath = path.resolve(scanPath);
             if (!fs.existsSync(resolvedPath)) { res.end(JSON.stringify({ error: 'path not found' })); return; }
             const projectName = path.basename(resolvedPath);
-            const project = {
+            // 檢查是否已存在同名專案
+            const existing = (await storage.listProjects()).find(p => p.name === projectName);
+            const project = existing ?? {
               id: randomUUID(), name: projectName,
               source: { type: 'local', location: resolvedPath },
               type: 'node' as const, enabledPlugins: ['scanner'], status: 'active' as const,

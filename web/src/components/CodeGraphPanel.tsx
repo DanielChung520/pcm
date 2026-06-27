@@ -6,7 +6,7 @@ import { fetchGraph, fetchProjects, type GraphNode, type GraphLink } from "../mo
 // Types
 // ---------------------------------------------------------------------------
 
-type LayoutMode = "force" | "circular" | "matrix" | "3d";
+type LayoutMode = "force" | "circular" | "treemap" | "3d";
 
 interface SimNode extends d3.SimulationNodeDatum, GraphNode {}
 interface SimLink extends d3.SimulationLinkDatum<SimNode> {
@@ -21,21 +21,36 @@ const modulePalette = [
   "#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#06b6d4",
   "#a855f7", "#ec4899", "#14b8a6", "#f97316", "#84cc16",
   "#3b82f6", "#eab308", "#10b981", "#f43f5e", "#8b5cf6",
+  "#0ea5e9", "#d946ef", "#34d399", "#fb923c", "#2dd4bf",
 ];
 
 const moduleColors: Record<string, string> = {};
 
 function getModuleColor(module: string): string {
-  if (!moduleColors[module]) {
-    const idx = Object.keys(moduleColors).length % modulePalette.length;
-    moduleColors[module] = modulePalette[idx];
-  }
-  return moduleColors[module];
+  return moduleColors[module] || "#666";
 }
 
-// Pre-warm colors for all nodes in the dataset so the legend is populated
+// 用完整路徑取色（比只用第一層目錄更豐富）
+function nodeColor(node: { filePath: string; module: string }): string {
+  const parts = node.filePath.split('/');
+  const key = parts.length > 2 ? `${parts[0]}/${parts[1]}` : node.module;
+  if (!moduleColors[key]) {
+    const count = Object.keys(moduleColors).length;
+    moduleColors[key] = modulePalette[count % modulePalette.length];
+  }
+  return moduleColors[key];
+}
+
 function assignModuleColors(nodes: GraphNode[]): void {
-  nodes.forEach((n) => getModuleColor(n.module));
+  // Pre-warm all node colors
+  nodes.forEach((n) => {
+    const parts = n.filePath.split('/');
+    const key = parts.length > 2 ? `${parts[0]}/${parts[1]}` : n.module;
+    if (!moduleColors[key]) {
+      const count = Object.keys(moduleColors).length;
+      moduleColors[key] = modulePalette[count % modulePalette.length];
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -142,7 +157,7 @@ function ForceGraph({ graphData, tooltipRef, onZoomChange, resetFnRef }: GraphPr
       .append("circle")
       .attr("class", "graph-node-circle")
       .attr("r", (d) => 6 + d.complexity / 3)
-      .attr("fill", (d) => getModuleColor(d.module));
+      .attr("fill", (d) => nodeColor(d));
 
     node
       .append("text")
@@ -372,7 +387,7 @@ function CircularGraph({ graphData, tooltipRef, onZoomChange, resetFnRef }: Grap
       .append("circle")
       .attr("class", "graph-node-circle")
       .attr("r", (d) => 5 + d.complexity / 4)
-      .attr("fill", (d) => getModuleColor(d.module));
+      .attr("fill", (d) => nodeColor(d));
 
     // Labels outside the circle
     node
@@ -459,10 +474,10 @@ function CircularGraph({ graphData, tooltipRef, onZoomChange, resetFnRef }: Grap
 }
 
 // ---------------------------------------------------------------------------
-// MatrixGraph — adjacency matrix grid
+// TreemapGraph — rectangular tree map, file size = complexity
 // ---------------------------------------------------------------------------
 
-function MatrixGraph({ graphData, tooltipRef, resetFnRef }: GraphProps) {
+function TreemapGraph({ graphData, tooltipRef, resetFnRef }: GraphProps) {
   const svgRef = useRef<SVGSVGElement>(null);
 
   const resetZoom = useCallback(() => {
@@ -477,153 +492,93 @@ function MatrixGraph({ graphData, tooltipRef, resetFnRef }: GraphProps) {
 
   useEffect(() => {
     const svgEl = svgRef.current;
-    if (!svgEl) return;
+    if (!svgEl || graphData.nodes.length === 0) return;
 
     const width = svgEl.clientWidth;
     const height = svgEl.clientHeight;
-
     d3.select(svgEl).selectAll("*").remove();
 
     const svg = d3.select(svgEl);
     const g = svg.append("g").attr("class", "graph-root");
 
-    // Zoom/pan support
-    const zoom = d3
-      .zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.3, 6])
-      .on("zoom", (event) => {
-        g.attr("transform", event.transform.toString());
-      });
+    const zoom = d3.zoom<SVGSVGElement, unknown>().scaleExtent([0.3, 6]).on("zoom", (event) => {
+      g.attr("transform", event.transform.toString());
+    });
     svg.call(zoom);
 
-    if (graphData.nodes.length === 0) return;
-
-    // Sort nodes by module then name
-    const sortedNodes = [...graphData.nodes].sort((a, b) =>
-      a.module === b.module ? a.name.localeCompare(b.name) : a.module.localeCompare(b.module),
-    );
-
-    const n = sortedNodes.length;
-    const idToIndex = new Map<string, number>();
-    sortedNodes.forEach((node, i) => idToIndex.set(node.id, i));
-
-    // Build adjacency matrix — count links between each pair
-    const matrix: number[][] = Array.from({ length: n }, () => new Array(n).fill(0));
-    let maxCount = 0;
-    graphData.links.forEach((l) => {
-      const si = idToIndex.get(l.source as string);
-      const ti = idToIndex.get(l.target as string);
-      if (si === undefined || ti === undefined) return;
-      matrix[si][ti] += 1;
-      if (matrix[si][ti] > maxCount) maxCount = matrix[si][ti];
-    });
-
-    // Layout dimensions
-    const margin = { top: 80, right: 10, bottom: 10, left: 120 };
-    const gridWidth = width - margin.left - margin.right;
-    const gridHeight = height - margin.top - margin.bottom;
-    const cellSize = Math.min(gridWidth / n, gridHeight / n);
-    const gridW = cellSize * n;
-    const gridH = cellSize * n;
-
-    // Translate group to leave room for labels
-    g.attr("transform", `translate(${margin.left},${margin.top})`);
-
-    // Color scale — accent with opacity by link count
-    const colorScale = d3
-      .scaleLinear<string>()
-      .domain([0, Math.max(1, maxCount)])
-      .range(["rgba(99, 102, 241, 0.05)", "rgba(99, 102, 241, 0.9)"])
-      .clamp(true);
-
-    // Draw cells
-    const tooltip = d3.select(tooltipRef.current);
-
-    for (let i = 0; i < n; i++) {
-      for (let j = 0; j < n; j++) {
-        const count = matrix[i][j];
-        if (count === 0) continue;
-        g.append("rect")
-          .attr("class", "matrix-cell")
-          .attr("x", j * cellSize)
-          .attr("y", i * cellSize)
-          .attr("width", Math.max(1, cellSize - 0.5))
-          .attr("height", Math.max(1, cellSize - 0.5))
-          .attr("fill", colorScale(count))
-          .on("mouseover", (event) => {
-            const src = sortedNodes[i];
-            const tgt = sortedNodes[j];
-            tooltip
-              .style("left", `${event.offsetX + 12}px`)
-              .style("top", `${event.offsetY + 12}px`)
-              .html(
-                `<div>${src.name}</div><div class="tooltip-module">${src.filePath}</div><div style="color: var(--accent-hover); margin-top: 4px;">→ ${tgt.name}</div><div class="tooltip-module">${tgt.filePath}</div>`,
-              )
-              .classed("visible", true);
-          })
-          .on("mousemove", (event) => {
-            tooltip
-              .style("left", `${event.offsetX + 12}px`)
-              .style("top", `${event.offsetY + 12}px`);
-          })
-          .on("mouseout", () => {
-            tooltip.classed("visible", false);
-          });
-      }
+    // Build hierarchy: root → module → file
+    const moduleMap = new Map<string, { name: string; children: { name: string; value: number; filePath: string }[] }>();
+    for (const n of graphData.nodes) {
+      if (!moduleMap.has(n.module)) moduleMap.set(n.module, { name: n.module, children: [] });
+      moduleMap.get(n.module)!.children.push({
+        name: n.filePath.split('/').pop() || n.name,
+        value: Math.max(1, n.complexity || 1),
+        filePath: n.filePath,
+      });
     }
 
-    // Diagonal reference line
-    g.append("line")
-      .attr("x1", 0)
-      .attr("y1", 0)
-      .attr("x2", gridW)
-      .attr("y2", gridH)
-      .attr("stroke", "var(--border)")
-      .attr("stroke-width", 1)
-      .attr("stroke-dasharray", "3 3")
-      .attr("opacity", 0.3);
+    const root = d3.hierarchy({
+      name: "root",
+      children: Array.from(moduleMap.values()),
+    }).sum((d: any) => (d.children ? 0 : d.value)) as any;
 
-    // Row labels (left side)
-    g.selectAll<SVGTextElement, typeof sortedNodes[number]>(".matrix-row-label")
-      .data(sortedNodes)
-      .join("text")
-      .attr("class", "matrix-label")
-      .attr("x", -6)
-      .attr("y", (_d, i) => i * cellSize + cellSize / 2 + 3)
-      .attr("text-anchor", "end")
-      .text((d) => (cellSize > 8 ? d.name : ""))
-      .on("mouseover", (event, d) => {
-        tooltip
-          .style("left", `${event.offsetX + 12}px`)
-          .style("top", `${event.offsetY + 12}px`)
-          .html(`<div>${d.name}</div><div class="tooltip-module">${d.filePath}</div>`)
-          .classed("visible", true);
-      })
-      .on("mouseout", () => {
-        tooltip.classed("visible", false);
-      });
+    d3.treemap().size([width, height]).padding(3).paddingInner(1)(root);
 
-    // Column labels (top, rotated)
-    g.selectAll<SVGTextElement, typeof sortedNodes[number]>(".matrix-col-label")
-      .data(sortedNodes)
-      .join("text")
-      .attr("class", "matrix-label")
-      .attr("x", (_d, i) => i * cellSize + cellSize / 2)
-      .attr("y", -6)
-      .attr("text-anchor", "start")
-      .attr("transform", (_d, i) => `rotate(-65 ${i * cellSize + cellSize / 2} -6)`)
-      .text((d) => (cellSize > 8 ? d.name : ""));
+    const tooltip = d3.select(tooltipRef.current);
+    const leaves = root.leaves() as any[];
+    const mods = root.children as any[] || [];
 
-    // Module color indicators on row labels
-    g.selectAll<SVGRectElement, typeof sortedNodes[number]>(".matrix-module-dot")
-      .data(sortedNodes)
-      .join("rect")
-      .attr("class", "matrix-module-dot")
-      .attr("x", -2)
-      .attr("y", (_d, i) => i * cellSize + cellSize / 2 - 3)
-      .attr("width", 3)
-      .attr("height", 6)
-      .attr("fill", (d) => getModuleColor(d.module));
+    // Draw parent module backgrounds
+    mods.forEach((mod: any) => {
+      g.append("rect")
+        .attr("x", mod.x0).attr("y", mod.y0)
+        .attr("width", mod.x1 - mod.x0).attr("height", mod.y1 - mod.y0)
+        .attr("fill", "var(--bg-tertiary)")
+        .attr("rx", 4);
+
+      g.append("text")
+        .attr("x", mod.x0 + 6).attr("y", mod.y0 + 14)
+        .attr("fill", "var(--text-secondary)")
+        .attr("font-size", 11)
+        .attr("font-family", "var(--font-sans)")
+        .text(mod.data.name);
+    });
+
+    // Draw file rectangles
+    leaves.forEach((leaf: any) => {
+      const node = leaf.data;
+      const fill = nodeColor({ filePath: node.filePath, module: leaf.parent?.data?.name || "" });
+
+      const rect = g.append("rect")
+        .attr("x", leaf.x0).attr("y", leaf.y0)
+        .attr("width", Math.max(1, leaf.x1 - leaf.x0))
+        .attr("height", Math.max(1, leaf.y1 - leaf.y0))
+        .attr("fill", fill)
+        .attr("opacity", 0.85)
+        .attr("rx", 2)
+        .attr("cursor", "pointer")
+        .on("mouseover", (event) => {
+          tooltip.style("left", `${event.offsetX + 12}px`).style("top", `${event.offsetY + 12}px`)
+            .html(`<div>${node.name}</div><div class="tooltip-module">${node.filePath}</div><div>complexity: ${node.value}</div>`)
+            .classed("visible", true);
+          rect.attr("opacity", 1).attr("stroke", "#fff").attr("stroke-width", 1);
+        })
+        .on("mouseout", () => {
+          tooltip.classed("visible", false);
+          rect.attr("opacity", 0.85).attr("stroke", "none");
+        });
+
+      // Label if large enough
+      const w = leaf.x1 - leaf.x0;
+      const h = leaf.y1 - leaf.y0;
+      if (w > 50 && h > 16) {
+        g.append("text")
+          .attr("x", leaf.x0 + 4).attr("y", leaf.y0 + 12)
+          .attr("fill", "#fff").attr("font-size", 10)
+          .attr("font-family", "var(--font-mono)")
+          .text(node.name.length > 20 ? node.name.slice(0, 18) + "…" : node.name);
+      }
+    });
   }, [graphData, tooltipRef]);
 
   return <svg ref={svgRef} className="graph-svg" />;
@@ -682,7 +637,7 @@ function Graph3D({ graphData, tooltipRef, resetFnRef }: GraphProps) {
           })
           .nodeId("id")
           .nodeVal((n: any) => 2 + (n.complexity ?? 0) / 3)
-          .nodeColor((n: any) => getModuleColor(n.module ?? ""))
+          .nodeColor((n: any) => nodeColor(n))
           .nodeOpacity(0.9)
           .nodeRelSize(4)
           .linkColor(() => "#4a4d6a")
@@ -837,14 +792,18 @@ function Graph3D({ graphData, tooltipRef, resetFnRef }: GraphProps) {
 const layoutLabels: { mode: LayoutMode; label: string }[] = [
   { mode: "force", label: "Force" },
   { mode: "circular", label: "Circular" },
-  { mode: "matrix", label: "Matrix" },
+  { mode: "treemap", label: "Treemap" },
   { mode: "3d", label: "3D" },
 ];
 
-export function CodeGraphPanel() {
+interface CodeGraphPanelProps {
+  initialProject?: string;
+}
+
+export function CodeGraphPanel({ initialProject = "" }: CodeGraphPanelProps) {
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
-  const [projectName, setProjectName] = useState("");
+  const [projectName, setProjectName] = useState(initialProject);
   const [projectList, setProjectList] = useState<string[]>([]);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("force");
   const resetFnRef = useRef<(() => void) | null>(null);
@@ -856,8 +815,9 @@ export function CodeGraphPanel() {
 
   useEffect(() => {
     fetchProjects().then((projects) => {
-      setProjectList(projects.map((p) => p.name));
-      if (projects.length > 0 && !projectName) setProjectName(projects[0].name);
+      const names = projects.map((p) => p.name);
+      setProjectList(names);
+      if (!projectName && names.length > 0) setProjectName(names[0]);
     });
   }, []);
 
@@ -927,8 +887,8 @@ export function CodeGraphPanel() {
           <ForceGraph {...sharedProps} />
         ) : layoutMode === "circular" ? (
           <CircularGraph {...sharedProps} />
-        ) : layoutMode === "matrix" ? (
-          <MatrixGraph {...sharedProps} />
+        ) : layoutMode === "treemap" ? (
+          <TreemapGraph {...sharedProps} />
         ) : (
           <Graph3D {...sharedProps} />
         )}

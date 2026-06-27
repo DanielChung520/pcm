@@ -1,4 +1,4 @@
-import { type Settings, type ScanInterval, type StorageBackend, type ThemeMode } from "../mockData";
+import { type Settings, type ScanInterval, type StorageBackend, type ThemeMode, type LayoutMode } from "../mockData";
 
 interface SettingsPanelProps {
   settings: Settings;
@@ -25,15 +25,43 @@ export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
         <div className="setting-row">
           <div>
             <div className="setting-label">Theme</div>
-            <div className="setting-desc">Switch between dark and light interface</div>
+            <div className="setting-desc">Dark, light, or follow system preference</div>
           </div>
           <div className="setting-control">
-            <div
-              className={`toggle ${settings.theme === "dark" ? "on" : ""}`}
-              onClick={() => update("theme", settings.theme === "dark" ? "light" : ("dark" as ThemeMode))}
-              title="Toggle theme"
-            >
-              <div className="toggle-knob" />
+            <div className="theme-selector">
+              {(["dark", "light", "system"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  className={`theme-btn ${settings.theme === mode ? "active" : ""}`}
+                  onClick={() => update("theme", mode as ThemeMode)}
+                >
+                  {mode === "dark" ? "\u25D0 Dark" : mode === "light" ? "\u2600 Light" : "\u2699 System"}
+                </button>
+              ))}
+          </div>
+        </div>
+        </div>
+      </div>
+
+      {/* Terminal */}
+      <div className="settings-group">
+        <div className="settings-group-title">Terminal Layout</div>
+        <div className="setting-row">
+          <div>
+            <div className="setting-label">Window Mode</div>
+            <div className="setting-desc">Sidebar Terminal button toggles panel open/closed</div>
+          </div>
+          <div className="setting-control">
+            <div className="theme-selector">
+              {(["full", "split-right", "split-left"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  className={`theme-btn ${settings.layout === mode ? "active" : ""}`}
+                  onClick={() => update("layout", mode as any)}
+                >
+                  {mode === "full" ? "\u25A0 Full" : mode === "split-right" ? "\u25B6 Split R" : "\u25C0 Split L"}
+                </button>
+              ))}
             </div>
           </div>
         </div>

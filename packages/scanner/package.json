@@ -15,10 +15,12 @@
     "@pcm/engine": "workspace:*",
     "@pcm/plugin-python": "workspace:*",
     "@pcm/plugin-rust": "workspace:*",
-    "@pcm/plugin-typescript": "workspace:*"
+    "@pcm/plugin-typescript": "workspace:*",
+    "ssh2": "^1.17.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/ssh2": "^1.15.5",
     "typescript": "^5.5.0"
   }
 }

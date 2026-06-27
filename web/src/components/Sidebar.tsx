@@ -7,11 +7,11 @@ interface SidebarProps {
   onToggleCollapse: () => void;
   mobileOpen: boolean;
   onCloseMobile: () => void;
+  terminalOpen?: boolean;
 }
 
 const navItems: { id: Panel; icon: string; label: string }[] = [
   { id: "dashboard", icon: "\u25A4", label: "Dashboard" },
-  { id: "graph", icon: "\u25D5", label: "CodeGraph" },
   { id: "projects", icon: "\u25A3", label: "Projects" },
   { id: "settings", icon: "\u2699", label: "Settings" },
   { id: "terminal", icon: "\u25B8", label: "Terminal" },
@@ -24,6 +24,7 @@ export function Sidebar({
   onToggleCollapse,
   mobileOpen,
   onCloseMobile,
+  terminalOpen,
 }: SidebarProps) {
   return (
     <>
@@ -52,7 +53,7 @@ export function Sidebar({
           {navItems.map((item) => (
             <button
               key={item.id}
-              className={activePanel === item.id ? "active" : ""}
+              className={`${item.id === "terminal" && terminalOpen ? "active" : ""} ${activePanel === item.id ? "active" : ""}`}
               onClick={() => {
                 onPanelChange(item.id);
                 onCloseMobile();

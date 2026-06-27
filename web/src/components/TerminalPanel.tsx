@@ -171,14 +171,9 @@ export function TerminalPanel() {
   }, []);
 
   return (
-    <div className="panel-fade terminal-panel">
+    <div className="terminal-panel">
       <div className="terminal-header">
-        <div className="terminal-dots">
-          <div className="terminal-dot red" />
-          <div className="terminal-dot yellow" />
-          <div className="terminal-dot green" />
-        </div>
-        <span className="terminal-title">pcm@local — {CWD}</span>
+        <span className="terminal-title">Terminal — {CWD}</span>
       </div>
       <div className="terminal-wrapper">
         <div ref={containerRef} className="terminal-container" />

@@ -25,7 +25,9 @@ export async function scanCommand(projectArg: string, options: ScanOptions): Pro
     }
 
     const projectName = path.basename(projectPath);
-    const project = {
+    // 檢查是否已存在同名專案（避免重複）
+    const existing = (await kernel.listProjects()).find(p => p.name === projectName);
+    const project = existing ?? {
       id: randomUUID(),
       name: projectName,
       source: { type: 'local', location: projectPath },

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { fetchProjects, type Project, type ProjectType, type ProjectStatus } from "../mockData";
 
 interface ProjectsPanelProps {
-  onGraphView: () => void;
+  onGraphView: (projectName: string) => void;
 }
 
 const typeIcons: Record<ProjectType, string> = { TypeScript: "TS", Python: "Py", Rust: "Rs" };
@@ -78,14 +78,41 @@ export function ProjectsPanel({ onGraphView }: ProjectsPanelProps) {
   useEffect(() => { fetchProjects().then(setProjects); }, []);
   const [newName, setNewName] = useState("");
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!newName.trim()) return;
-    setProjects([...projects, {
-      id: `p${Date.now()}`, name: newName.trim(),
-      type: "TypeScript" as ProjectType, status: "active" as ProjectStatus,
+    const path = newName.trim();
+    setNewName("");
+    // 加入臨時卡片顯示 scanning 狀態
+    const tempId = `p${Date.now()}`;
+    setProjects(prev => [...prev, {
+      id: tempId, name: path.split('/').pop() || path,
+      type: "TypeScript" as ProjectType, status: "scanning" as ProjectStatus,
       files: 0, symbols: 0, relationships: 0, hotspots: [], lastScanned: null,
     }]);
-    setNewName("");
+    // 呼叫真實 scan API
+    try {
+      const res = await fetch(`/api/scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, force: true }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setProjects(prev => prev.map(p => p.id === tempId ? {
+          ...p, status: "active" as ProjectStatus,
+          files: data.stats?.fileCount ?? 0,
+          symbols: data.stats?.symbolCount ?? 0,
+          relationships: data.stats?.relationshipCount ?? 0,
+          lastScanned: new Date().toISOString(),
+        } : p));
+      } else {
+        setProjects(prev => prev.filter(p => p.id !== tempId));
+      }
+    } catch {
+      setProjects(prev => prev.filter(p => p.id !== tempId));
+    }
+    // 重新從 API 載入完整列表
+    fetchProjects().then(setProjects);
   };
 
   const handleDelete = (id: string) => setProjects(prev => prev.filter(p => p.id !== id));
@@ -154,11 +181,19 @@ export function ProjectsPanel({ onGraphView }: ProjectsPanelProps) {
       </div>
 
       <div className="project-tree">
-        {treeNodes.map((tn, idx) => {
+        {treeNodes
+          .filter((tn, idx) => {
+            for (let i = idx - 1; i >= 0; i--) {
+              if (treeNodes[i].depth >= tn.depth) continue;
+              if (collapsed.has(treeNodes[i].project.id)) return false;
+              break;
+            }
+            return true;
+          })
+          .map((tn) => {
           const p = tn.project;
           const isCollapsed = collapsed.has(p.id);
           const isParent = hasChildren.has(p.id);
-          const hasVisibleChildren = isParent && !isCollapsed;
 
           return (
             <div key={p.id} className={`project-tree-row depth-${tn.depth}`}>
@@ -187,6 +222,7 @@ export function ProjectsPanel({ onGraphView }: ProjectsPanelProps) {
                   <span className="project-scan-time">{formatTime(p.lastScanned)}</span>
                 </div>
                 <div className="project-actions">
+                  <button className="btn-small" onClick={() => onGraphView(p.name)}>Graph</button>
                   <button className="btn-small" onClick={() => handleScan(p.id)}>Scan</button>
                   <button className="btn-small danger" onClick={() => handleDelete(p.id)}>Delete</button>
                 </div>

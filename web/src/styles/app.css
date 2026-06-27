@@ -118,6 +118,7 @@ body {
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  position: relative;
   padding: var(--space-3);
   gap: var(--space-2);
   transition: width var(--transition-slow);
@@ -260,7 +261,7 @@ body {
 
 .sidebar-toggle {
   position: absolute;
-  top: var(--space-3);
+  bottom: var(--space-6);
   right: -14px;
   width: 28px;
   height: 28px;
@@ -299,11 +300,53 @@ body {
 
 .main-content {
   flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: var(--space-6);
+  overflow: hidden;
   background: var(--bg-primary);
-  position: relative;
+  display: flex;
+}
+
+.panel-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-6);
+  min-width: 0;
+}
+
+/* ── Terminal Split Layout ── */
+.layout-full {
+  flex-direction: column;
+}
+
+.layout-full .panel-area {
+  flex: 1;
+}
+
+.terminal-split {
+  flex: 0 0 40%;
+  width: 40%;
+  min-width: 350px;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.layout-split-left {
+  flex-direction: row;
+}
+
+.layout-split-left .terminal-split {
+  order: -1;
+  border-left: none;
+  border-right: 1px solid var(--border);
+}
+
+.layout-split-left .panel-area {
+  /* row-reverse swaps visual order, panel-area stays on right */
+}
+
+.split-layout-full .terminal-split {
+  display: none;
 }
 
 .panel-header {
@@ -1080,14 +1123,16 @@ body {
 .terminal-panel {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - var(--space-6) * 2);
+  height: 100%;
+  overflow: hidden;
 }
 
 .terminal-header {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  margin-bottom: var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  flex-shrink: 0;
 }
 
 .terminal-dots {
@@ -1117,8 +1162,8 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   overflow: hidden;
-  padding: var(--space-2);
-  min-height: 400px;
+  padding: var(--space-1);
+  min-height: 0;
 }
 
 .terminal-container {
@@ -1232,6 +1277,23 @@ body {
   background: var(--border);
 }
 
+/* 子節點卡片左側的橫線 connector */
+.project-tree-row.depth-1 > .project-card,
+.project-tree-row.depth-2 > .project-card {
+  position: relative;
+}
+
+.project-tree-row.depth-1 > .project-card::before,
+.project-tree-row.depth-2 > .project-card::before {
+  content: '';
+  position: absolute;
+  left: -14px;
+  top: 50%;
+  width: 14px;
+  height: 1px;
+  background: var(--border);
+}
+
 .tree-toggle {
   background: transparent;
   border: none;
@@ -1272,4 +1334,32 @@ body {
   color: var(--text-secondary);
   font-family: var(--font-mono);
   white-space: nowrap;
+}
+
+/* ── Theme Selector ── */
+.theme-selector {
+  display: flex;
+  gap: 4px;
+}
+
+.theme-btn {
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+}
+
+.theme-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.theme-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }

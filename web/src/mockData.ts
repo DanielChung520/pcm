@@ -21,10 +21,12 @@ const API_BASE = '';
 
 export type ScanInterval = "manual" | "hourly" | "daily" | "weekly";
 export type StorageBackend = "sqlite" | "arangodb";
-export type ThemeMode = "dark" | "light";
+export type ThemeMode = "dark" | "light" | "system";
+export type LayoutMode = "full" | "split-left" | "split-right";
 
 export interface Settings {
   theme: ThemeMode;
+  layout: LayoutMode;
   scanInterval: ScanInterval;
   llmModel: string;
   storageBackend: StorageBackend;
@@ -32,6 +34,7 @@ export interface Settings {
 
 export const defaultSettings: Settings = {
   theme: "dark",
+  layout: "full",
   scanInterval: "manual",
   llmModel: "qwen3-30b-a3b-4bit",
   storageBackend: "sqlite",

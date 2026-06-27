@@ -5,6 +5,8 @@ export { ImpactAnalyzer, detectCycles } from './impact.js';
 export type { ImpactResult, ImpactReport } from './impact.js';
 export { getGitHash, getChangedFiles, isGitRepo } from './git.js';
 export { LLMPlugin } from './llm.js';
+export { SSHScanner } from './ssh.js';
+export type { SSHConfig } from './ssh.js';
 
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
@@ -160,11 +162,12 @@ export class ScannerPlugin implements FeaturePlugin {
           targetId: '',
           type: 'imports',
           strength: 1.0,
-          metadata: {
-            importSource: imp.source,
-            imported: imp.imported,
-            startLine: imp.startLine,
-          },
+      metadata: {
+        importSource: imp.source,
+        imported: imp.imported,
+        startLine: imp.startLine,
+        _sourceFile: filePath,
+      },
         });
       }
 
@@ -304,22 +307,25 @@ export class ScannerPlugin implements FeaturePlugin {
 
   private resolveImportPath(
     importSource: string,
-    _currentFile: string,
+    currentFile: string,
     extensions: string[],
   ): string {
-    // Remove relative prefix and try extensions
-    if (importSource.startsWith('.')) {
-      for (const ext of extensions) {
-        const candidate = importSource + ext;
-        if (fs.existsSync(candidate)) {
-          return candidate;
-        }
-        const indexCandidate = path.join(importSource, `index${ext}`);
-        if (fs.existsSync(indexCandidate)) {
-          return indexCandidate;
-        }
-      }
+    // 相對於來源檔案目錄解析相對路徑
+    let normalized = importSource;
+    if (currentFile && (normalized.startsWith('./') || normalized.startsWith('../'))) {
+      const dir = path.dirname(currentFile);
+      normalized = path.posix.join(dir, normalized);
     }
-    return importSource;
+    if (normalized.startsWith('./')) normalized = normalized.slice(2);
+    for (const ext of extensions) {
+      const candidate = normalized + ext;
+      if (fs.existsSync(candidate)) return candidate;
+    }
+    // Try as directory with index file
+    for (const ext of extensions) {
+      const indexCandidate = path.posix.join(normalized, 'index' + ext);
+      if (fs.existsSync(indexCandidate)) return indexCandidate;
+    }
+    return normalized.replace(/\.js$/, '.ts');
   }
 }
