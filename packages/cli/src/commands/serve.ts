@@ -1,26 +1,36 @@
 import * as http from 'node:http';
+import * as path from 'node:path';
+import * as fs from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { getKernel } from '@pcm/core';
-import { LocalStorageAdapter } from '@pcm/storage';
+import { ArangoDBAdapter } from '@pcm/storage';
+import { ScannerPlugin } from '@pcm/scanner';
 
 export async function serveCommand(port: number): Promise<void> {
   const kernel = getKernel();
   await kernel.initialize();
-  const storage = new LocalStorageAdapter();
+  const storage = new ArangoDBAdapter({
+    url: 'http://localhost:8529',
+    dbName: 'pcm',
+  });
   await storage.initialize();
   kernel.plugins.setStorage(storage);
+  const scanner = new ScannerPlugin();
+  await scanner.onLoad();
+  kernel.plugins.registerFeature(scanner);
 
   const server = http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
     const url = new URL(req.url || '/', `http://${req.headers.host}`);
-    const path = url.pathname;
+    const urlPath = url.pathname;
     res.setHeader('Content-Type', 'application/json');
 
     try {
-      if (path === '/api/projects') {
+      if (urlPath === '/api/projects') {
         const projects = await storage.listProjects();
         const result = [];
         for (const p of projects) {
@@ -28,6 +38,7 @@ export async function serveCommand(port: number): Promise<void> {
           result.push({
             id: p.id, name: p.name, type: p.type, status: p.status,
             lastScanned: p.lastScannedAt,
+            source: p.source,
             files: graph?.stats.fileCount ?? 0,
             symbols: graph?.stats.symbolCount ?? 0,
             relationships: graph?.stats.relationshipCount ?? 0,
@@ -36,8 +47,8 @@ export async function serveCommand(port: number): Promise<void> {
         }
         res.end(JSON.stringify(result));
       }
-      else if (path.startsWith('/api/graph/')) {
-        const name = decodeURIComponent(path.slice(11));
+      else if (urlPath.startsWith('/api/graph/')) {
+        const name = decodeURIComponent(urlPath.slice(11));
         const projects = await storage.listProjects();
         const proj = projects.find(p => p.name === name || p.id === name);
         if (!proj) { res.writeHead(404); res.end(JSON.stringify({ error: 'not found' })); return; }
@@ -48,12 +59,15 @@ export async function serveCommand(port: number): Promise<void> {
           module: s.filePath.split('/')[0] || 'root',
           type: s.type, complexity: s.complexity,
         }));
-        const links = graph.relationships.map(r => ({
-          source: r.sourceId, target: r.targetId, type: r.type,
-        }));
+        const nodeIds = new Set(graph.symbols.map(s => s.id));
+        const links = graph.relationships
+          .filter(r => r.sourceId && r.targetId && nodeIds.has(r.sourceId) && nodeIds.has(r.targetId))
+          .map(r => ({
+            source: r.sourceId, target: r.targetId, type: r.type,
+          }));
         res.end(JSON.stringify({ nodes, links }));
       }
-      else if (path === '/api/stats') {
+      else if (urlPath === '/api/stats') {
         const projects = await storage.listProjects();
         let totalFiles = 0, totalSymbols = 0, totalRels = 0;
         for (const p of projects) {
@@ -61,6 +75,27 @@ export async function serveCommand(port: number): Promise<void> {
           if (g) { totalFiles += g.stats.fileCount; totalSymbols += g.stats.symbolCount; totalRels += g.stats.relationshipCount; }
         }
         res.end(JSON.stringify({ projects: projects.length, files: totalFiles, symbols: totalSymbols, relationships: totalRels }));
+      }
+      else if (urlPath === '/api/scan' && req.method === 'POST') {
+        let body = '';
+        req.on('data', (chunk: string) => body += chunk);
+        req.on('end', async () => {
+          try {
+            const { path: scanPath, force } = JSON.parse(body);
+            const resolvedPath = path.resolve(scanPath);
+            if (!fs.existsSync(resolvedPath)) { res.end(JSON.stringify({ error: 'path not found' })); return; }
+            const projectName = path.basename(resolvedPath);
+            const project = {
+              id: randomUUID(), name: projectName,
+              source: { type: 'local', location: resolvedPath },
+              type: 'node' as const, enabledPlugins: ['scanner'], status: 'active' as const,
+              createdAt: new Date(), updatedAt: new Date(), lastScannedAt: null, metadata: {},
+            };
+            await storage.saveProject(project);
+            const graph = await scanner.scan(project, !!force);
+            res.end(JSON.stringify({ project: projectName, stats: graph.stats }));
+          } catch (err) { res.end(JSON.stringify({ error: String(err) })); }
+        });
       }
       else { res.writeHead(404); res.end(JSON.stringify({ error: 'not found' })); }
     } catch (err) {

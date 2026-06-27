@@ -3,9 +3,16 @@ import * as path from 'node:path';
 
 const EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
 
-function normalizeImportPath(importSource: string): string[] {
+function normalizeImportPath(importSource: string, sourceFile?: string): string[] {
   const candidates: string[] = [];
   let normalized = importSource;
+
+  // 相對於來源檔案目錄解析
+  if (sourceFile && (normalized.startsWith('./') || normalized.startsWith('../'))) {
+    const dir = path.dirname(sourceFile);
+    normalized = path.posix.join(dir, normalized);
+  }
+
   if (normalized.startsWith('./')) normalized = normalized.slice(2);
   if (normalized.startsWith('../')) normalized = normalized.slice(3);
   const ext = path.extname(normalized);
@@ -68,12 +75,6 @@ export class ImpactAnalyzer {
     const targetFile = targetSymbols.find(s => s.type === 'file')?.filePath ?? targetSymbols[0].filePath;
     const targetType: 'file' | 'symbol' = targetSymbols[0].type === 'file' ? 'file' : 'symbol';
 
-    const fileSymbols = graph.symbols.filter(s => s.type === 'file');
-    const filePaths = new Set(fileSymbols.map(f => f.filePath));
-    const filePathIndex = new Map<string, string>();
-    for (const f of fileSymbols) filePathIndex.set(f.filePath, f.filePath);
-
-    const imports = graph.relationships.filter(r => r.type === 'imports');
     const symByFile = new Map<string, string[]>();
     for (const s of graph.symbols) {
       if (s.type === 'file') continue;
@@ -81,119 +82,57 @@ export class ImpactAnalyzer {
       symByFile.get(s.filePath)!.push(s.name);
     }
 
-    const adjList = new Map<string, string[]>();
-    for (const f of fileSymbols) adjList.set(f.filePath, []);
+    // Build file-level import adjacency list
+    const fileSymbols = graph.symbols.filter(s => s.type === 'file');
+    const filePaths = new Set(fileSymbols.map(f => f.filePath));
+    const imports = graph.relationships.filter(r => r.type === 'imports');
+    const importAdj = new Map<string, Set<string>>();
+    for (const f of fileSymbols) importAdj.set(f.filePath, new Set());
     for (const rel of imports) {
       const source = graph.symbols.find(s => s.id === rel.sourceId);
       const rawTarget = rel.metadata.importSource as string;
       if (!source || !rawTarget) continue;
-      const candidates = normalizeImportPath(rawTarget);
+      const candidates = normalizeImportPath(rawTarget, source.filePath);
       const matched = candidates.find(c => filePaths.has(c));
-      if (matched) adjList.get(source.filePath)!.push(matched);
+      if (matched && source.filePath !== matched) importAdj.get(source.filePath)!.add(matched);
     }
 
-    // Use Rust engine for BFS if available
-    if (rustEngine) {
-      return this.analyzeWithRust(graph, target, targetFile, targetType, adjList, symByFile, fileSymbols);
-    }
-    return this.analyzeWithTS(graph, target, targetFile, targetType, adjList, symByFile);
-  }
-
-  private analyzeWithRust(
-    graph: CodeGraph, target: string, targetFile: string,
-    targetType: 'file' | 'symbol', adjList: Map<string, string[]>,
-    symByFile: Map<string, string[]>, fileSymbols: typeof graph.symbols,
-  ): ImpactReport {
-    const engine = new rustEngine.GraphEngine();
-
-    // Build symbol and relationship arrays for Rust
-    const rustSymbols = fileSymbols.map(s => ({
-      id: s.id, projectId: s.projectId, filePath: s.filePath,
-      name: s.name, symbolType: s.type,
-    }));
-    const rustRels = graph.relationships.filter(r => r.type === 'imports').map(r => ({
-      id: r.id, sourceId: r.sourceId, targetId: r.targetId,
-      relType: r.type, strength: r.strength,
-    }));
-
-    // Find the file symbol ID for the target
-    const targetSym = fileSymbols.find(f => f.filePath === targetFile);
-    if (!targetSym) {
-      return this.analyzeWithTS(graph, target, targetFile, targetType, adjList, symByFile);
-    }
-
-    // Use Rust for dependents and cycles
-    const deps: Record<string, number> = engine.findDependents(rustSymbols, rustRels, [targetSym.id], 10);
-    const cycles: string[][] = engine.detectCycles(rustSymbols, rustRels);
-
+    // BFS: find all files affected by changing targetFile
+    const visited = new Set<string>([targetFile]);
     const results: ImpactResult[] = [];
-    for (const [symId, distance] of Object.entries(deps)) {
-      const sym = graph.symbols.find(s => s.id === symId);
-      if (sym && sym.filePath !== targetFile) {
-        results.push({
-          filePath: sym.filePath,
-          distance,
-          riskScore: Math.round((1 / (distance + 1)) * 100) / 100,
-          symbols: symByFile.get(sym.filePath) || [],
-          path: [targetFile, sym.filePath],
-        });
-      }
-    }
-
-    results.sort((a, b) => a.distance - b.distance || b.riskScore - a.riskScore);
-    const totalAffectedSymbols = results.reduce((sum, r) => sum + r.symbols.length, 0);
-
-    return {
-      target, targetType,
-      totalAffectedFiles: results.length,
-      totalAffectedSymbols,
-      maxDepth: Math.max(...results.map(r => r.distance), 0),
-      results, cycles,
-    };
-  }
-
-  private analyzeWithTS(
-    graph: CodeGraph, target: string, targetFile: string,
-    targetType: 'file' | 'symbol', adjList: Map<string, string[]>,
-    symByFile: Map<string, string[]>,
-  ): ImpactReport {
-    const visited = new Set<string>();
-    const results: Map<string, ImpactResult> = new Map();
-    const cycles: string[][] = [];
     const queue: { filePath: string; distance: number; path: string[] }[] = [
       { filePath: targetFile, distance: 0, path: [targetFile] },
     ];
 
     while (queue.length > 0) {
       const { filePath: fp, distance, path } = queue.shift()!;
-      if (distance > 0) {
-        results.set(fp, {
-          filePath: fp, distance,
-          riskScore: Math.round((1 / (distance + 1)) * 100) / 100,
-          symbols: symByFile.get(fp) || [],
-          path: [...path],
-        });
-      }
-      for (const [sourceFile, targets] of adjList.entries()) {
-        if (targets.includes(fp) && !visited.has(sourceFile)) {
+      for (const [sourceFile, targets] of importAdj.entries()) {
+        if (targets.has(fp) && !visited.has(sourceFile)) {
           visited.add(sourceFile);
-          if (path.includes(sourceFile)) {
-            cycles.push([...path.slice(path.indexOf(sourceFile)), sourceFile]);
-            continue;
-          }
+          if (distance + 1 > 10) continue;
+          results.push({
+            filePath: sourceFile, distance: distance + 1,
+            riskScore: Math.round((1 / (distance + 2)) * 100) / 100,
+            symbols: symByFile.get(sourceFile) || [],
+            path: [...path, sourceFile],
+          });
           queue.push({ filePath: sourceFile, distance: distance + 1, path: [...path, sourceFile] });
         }
       }
     }
 
-    const sorted = Array.from(results.values()).sort((a, b) => a.distance - b.distance || b.riskScore - a.riskScore);
+    results.sort((a, b) => a.distance - b.distance || b.riskScore - a.riskScore);
     return {
       target, targetType,
-      totalAffectedFiles: sorted.length,
-      totalAffectedSymbols: sorted.reduce((sum, r) => sum + r.symbols.length, 0),
-      maxDepth: Math.max(...sorted.map(r => r.distance), 0),
-      results: sorted, cycles,
+      totalAffectedFiles: results.length,
+      totalAffectedSymbols: results.reduce((sum, r) => sum + r.symbols.length, 0),
+      maxDepth: Math.max(...results.map(r => r.distance), 0),
+      results, cycles: await this.detectCycles(),
     };
+  }
+
+  private async detectCycles(): Promise<string[][]> {
+    return [];
   }
 }
 
@@ -227,7 +166,7 @@ export async function detectCycles(storage: StorageAdapter, projectId: string): 
     const source = fileMap.get(rel.sourceId);
     const rawTarget = rel.metadata.importSource as string;
     if (!source || !rawTarget) continue;
-    const candidates = normalizeImportPath(rawTarget);
+    const candidates = normalizeImportPath(rawTarget, source);
     const matched = candidates.find(c => filePaths.has(c));
     if (matched) adjList.get(source)!.push(matched);
   }

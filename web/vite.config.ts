@@ -9,7 +9,8 @@ export default defineConfig(async () => ({
   server: {
     port: 56520,
     strictPort: true,
-    host: host || false,
+    host: '0.0.0.0',
+    allowedHosts: ['pcm.ai-daniel.org'],
     hmr: host ? { protocol: "ws", host, port: 5174 } : undefined,
     watch: { ignored: ["**/src-tauri/**"] },
     proxy: {

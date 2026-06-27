@@ -24,19 +24,24 @@ export class ArangoDBAdapter implements StorageAdapter {
   async initialize(): Promise<void> {
     const { Database } = await import('arangojs');
     this.db = new Database({ url: this.url });
-    this.db.useDatabase(this.dbName);
     this.db.useBasicAuth(this.username, this.password);
+    this.db = this.db.database(this.dbName);
 
     const exists = await this.db.exists();
     if (!exists) {
       await this.db.createDatabase(this.dbName);
     }
 
-    const collections = ['projects', 'symbols', 'relationships', 'graph_cache'];
+    const collections = ['projects', 'symbols', 'graph_cache'];
     for (const name of collections) {
       const col = this.db.collection(name);
       const colExists = await col.exists();
       if (!colExists) await col.create();
+    }
+    // 關係用 edge collection（_from / _to 才能做圖遍歷）
+    const relCol = this.db.collection('relationships');
+    if (!(await relCol.exists())) {
+      await this.db.createEdgeCollection('relationships');
     }
   }
 
@@ -86,7 +91,7 @@ export class ArangoDBAdapter implements StorageAdapter {
     if (filter.projectId) { query += ' AND s.projectId == @projectId'; bindVars.projectId = filter.projectId; }
     if (filter.type) { query += ' AND s.type == @type'; bindVars.type = filter.type; }
     if (filter.name) { query += ' AND CONTAINS(s.name, @name)'; bindVars.name = filter.name; }
-    query += ' LIMIT @limit OFFSET @offset';
+    query += ' LIMIT @offset, @limit';
     bindVars.limit = filter.limit ?? 100;
     bindVars.offset = filter.offset ?? 0;
     const cursor = await this.db.query(query, bindVars);
@@ -94,7 +99,12 @@ export class ArangoDBAdapter implements StorageAdapter {
   }
 
   async saveRelationship(rel: Relationship): Promise<void> {
-    await this.db.collection('relationships').save({ _key: rel.id, ...rel }, { overwrite: true });
+    await this.db.collection('relationships').save({
+      _key: rel.id,
+      _from: `symbols/${rel.sourceId}`,
+      _to: `symbols/${rel.targetId}`,
+      ...rel,
+    }, { overwrite: true });
   }
 
   async saveRelationships(rels: Relationship[]): Promise<void> {
@@ -107,7 +117,7 @@ export class ArangoDBAdapter implements StorageAdapter {
     if (filter.sourceId) { query += ' AND r.sourceId == @sourceId'; bindVars.sourceId = filter.sourceId; }
     if (filter.targetId) { query += ' AND r.targetId == @targetId'; bindVars.targetId = filter.targetId; }
     if (filter.type) { query += ' AND r.type == @type'; bindVars.type = filter.type; }
-    query += ' LIMIT @limit OFFSET @offset';
+    query += ' LIMIT @offset, @limit';
     bindVars.limit = filter.limit ?? 500;
     bindVars.offset = filter.offset ?? 0;
     const cursor = await this.db.query(query, bindVars);

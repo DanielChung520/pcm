@@ -5,6 +5,7 @@ export interface Project {
   id: string; name: string; type: ProjectType; status: ProjectStatus;
   lastScanned: string | null; files: number; symbols: number; relationships: number;
   hotspots: { name: string; filePath: string; complexity: number; riskScore: number }[];
+  source?: { type: string; location: string };
 }
 
 export interface GraphNode {
