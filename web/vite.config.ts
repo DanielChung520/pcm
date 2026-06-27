@@ -7,10 +7,16 @@ export default defineConfig(async () => ({
   plugins: [react()],
   clearScreen: false,
   server: {
-    port: 5173,
+    port: 56520,
     strictPort: true,
     host: host || false,
     hmr: host ? { protocol: "ws", host, port: 5174 } : undefined,
     watch: { ignored: ["**/src-tauri/**"] },
+    proxy: {
+      '/api': {
+        target: 'http://localhost:56521',
+        changeOrigin: true,
+      },
+    },
   },
 }));

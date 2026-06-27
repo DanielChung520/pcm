@@ -8,6 +8,7 @@ import { graphCommand } from './commands/graph.js';
 import { modulesCommand } from './commands/modules.js';
 import { hotspotsCommand } from './commands/hotspots.js';
 import { impactCommand, cyclesCommand } from './commands/impact.js';
+import { serveCommand } from './commands/serve.js';
 const version = '0.1.0';
 
 const program = new Command();
@@ -77,5 +78,11 @@ program
   .argument('<project>', '專案名稱')
   .option('--json', 'JSON 格式輸出')
   .action(cyclesCommand);
+
+program
+  .command('serve')
+  .description('啟動 API server 供前端讀取資料')
+  .argument('[port]', '埠號', '56520')
+  .action(serveCommand);
 
 program.parse(process.argv);
