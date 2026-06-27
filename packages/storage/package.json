@@ -19,11 +19,9 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1075.0",
     "@pcm/core": "workspace:*",
-    "arangojs": "^10.3.1",
-    "better-sqlite3": "^11.0.0"
+    "arangojs": "^10.3.1"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.0",
     "typescript": "^5.5.0"
   }
 }

@@ -1,8 +1,0 @@
-
-[ml]
-sentence-transformers>=3.0
-numpy>=1.24
-
-[rag]
-networkx>=3.0
-scikit-learn>=1.3
