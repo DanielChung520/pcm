@@ -32,36 +32,24 @@ export function TerminalPanel() {
     requestAnimationFrame(() => { try { fitAddon.fit(); } catch {} });
 
     termRef.current = term;
+    let cancelled = false;
 
-    // Connect WebSocket
-    let ws: WebSocket;
-    try {
-      ws = new WebSocket(WS_URL);
-      ws.onopen = () => { term.write(""); };
-      ws.onmessage = (ev) => term.write(ev.data);
-      ws.onclose = () => term.writeln("\r\n\x1b[31m[disconnected]\x1b[0m");
-      ws.onerror = () => term.writeln("\r\n\x1b[31m[connection error]\x1b[0m");
-      wsRef.current = ws;
-    } catch {
-      term.writeln("\r\n\x1b[31m[WebSocket not available]\x1b[0m");
-    }
+    // WebSocket connection
+    const ws = new WebSocket(WS_URL);
+    wsRef.current = ws;
+    ws.onopen = () => {
+      if (cancelled) { ws.close(); return; }
+      term.focus();
+      term.write("\r\n\x1b[32m[connected]\x1b[0m\r\n");
+    };
+    ws.onmessage = (ev) => { if (!cancelled) term.write(ev.data); };
+    ws.onclose = () => { if (!cancelled) term.writeln("\r\n\x1b[31m[disconnected]\x1b[0m"); };
 
-    // Send input to WebSocket
-    const keyDisposable = term.onKey((e) => {
-      if (ws?.readyState === WebSocket.OPEN) {
-        ws.send(e.key);
+    // Send terminal input to WebSocket
+    term.onData((data) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(data);
       }
-    });
-
-    // Paste support
-    term.attachCustomKeyEventHandler((e) => {
-      if (e.type === "keydown" && e.ctrlKey && e.key === "v") {
-        navigator.clipboard.readText().then(text => {
-          if (ws?.readyState === WebSocket.OPEN) ws.send(text);
-        });
-        return false;
-      }
-      return true;
     });
 
     // Resize
@@ -69,11 +57,10 @@ export function TerminalPanel() {
     resizeObserver.observe(containerRef.current);
 
     return () => {
-      keyDisposable.dispose();
+      cancelled = true;
       resizeObserver.disconnect();
-      ws?.close();
-      term.dispose();
-      termRef.current = null;
+      ws.close();
+      setTimeout(() => { term.dispose(); termRef.current = null; }, 100);
     };
   }, []);
 

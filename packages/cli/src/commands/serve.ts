@@ -118,11 +118,15 @@ export async function serveCommand(port: number): Promise<void> {
   // WebSocket terminal server
   const wss = new WebSocketServer({ server });
   wss.on('connection', (ws) => {
-    const shell = spawn(process.env.SHELL || '/bin/bash', [], {
+    console.error('[Terminal] New connection');
+    const shell = spawn(process.env.SHELL || '/bin/bash', ['-i'], {
       env: { ...process.env, TERM: 'xterm-256color' },
       cwd: process.env.HOME || '/tmp',
     });
-    ws.on('message', (data) => shell.stdin.write(data.toString()));
+    ws.on('message', (data) => {
+      console.error('[Terminal] Input:', JSON.stringify(data.toString().substring(0, 50)));
+      shell.stdin.write(data.toString());
+    });
     shell.stdout.on('data', (data) => { try { ws.send(data.toString()); } catch {} });
     shell.stderr.on('data', (data) => { try { ws.send(data.toString()); } catch {} });
     ws.on('close', () => shell.kill());
