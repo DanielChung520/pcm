@@ -149,10 +149,6 @@ export function TerminalPanel() {
       }
     };
 
-    const disposable = term.onData((data) => {
-      // onData gives us raw data; we handle key events via onKey for better control
-    });
-
     const keyDisposable = term.onKey(handleKey);
 
     // Responsive resize
@@ -162,7 +158,6 @@ export function TerminalPanel() {
     resizeObserver.observe(containerRef.current);
 
     return () => {
-      disposable.dispose();
       keyDisposable.dispose();
       resizeObserver.disconnect();
       term.dispose();

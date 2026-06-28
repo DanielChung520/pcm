@@ -1134,22 +1134,6 @@ body {
   padding: var(--space-2) var(--space-3);
   flex-shrink: 0;
 }
-
-.terminal-dots {
-  display: flex;
-  gap: 6px;
-}
-
-.terminal-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-}
-
-.terminal-dot.red { background: #ff5f56; }
-.terminal-dot.yellow { background: #ffbd2e; }
-.terminal-dot.green { background: #27c93f; }
-
 .terminal-title {
   font-family: var(--font-mono);
   font-size: 13px;
