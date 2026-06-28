@@ -18,6 +18,10 @@ export default defineConfig(async () => ({
         target: 'http://localhost:56521',
         changeOrigin: true,
       },
+      '/terminal': {
+        target: 'ws://localhost:56521',
+        ws: true,
+      },
     },
   },
 }));

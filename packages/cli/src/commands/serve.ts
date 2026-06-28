@@ -5,6 +5,8 @@ import { randomUUID } from 'node:crypto';
 import { getKernel } from '@pcm/core';
 import { ArangoDBAdapter } from '@pcm/storage';
 import { ScannerPlugin } from '@pcm/scanner';
+import { WebSocketServer } from 'ws';
+import { spawn } from 'node:child_process';
 
 export async function serveCommand(port: number): Promise<void> {
   const kernel = getKernel();
@@ -110,5 +112,21 @@ export async function serveCommand(port: number): Promise<void> {
     console.error(`  GET /api/projects  — 專案列表`);
     console.error(`  GET /api/graph/:name — 圖譜資料`);
     console.error(`  GET /api/stats    — 總體統計`);
+    console.error(`  POST /api/scan    — 掃描專案`);
   });
+
+  // WebSocket terminal server
+  const wss = new WebSocketServer({ server });
+  wss.on('connection', (ws) => {
+    const shell = spawn(process.env.SHELL || '/bin/bash', [], {
+      env: { ...process.env, TERM: 'xterm-256color' },
+      cwd: process.env.HOME || '/tmp',
+    });
+    ws.on('message', (data) => shell.stdin.write(data.toString()));
+    shell.stdout.on('data', (data) => { try { ws.send(data.toString()); } catch {} });
+    shell.stderr.on('data', (data) => { try { ws.send(data.toString()); } catch {} });
+    ws.on('close', () => shell.kill());
+    shell.on('exit', () => ws.close());
+  });
+  console.error(`[PCM Terminal] WebSocket ready`);
 }
