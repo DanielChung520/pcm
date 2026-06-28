@@ -1,5 +1,5 @@
 <!doctype html>
-  <html lang="en" data-theme="dark">
+  <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -10,15 +10,6 @@
       href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <script>
-      // 在 React 載入前強制深色主題（防止任何快取或 JS 錯誤導致白畫面）
-      document.documentElement.setAttribute("data-theme", "dark");
-      try {
-        var s = JSON.parse(localStorage.getItem("pcm-settings") || "{}");
-        s.theme = "dark";
-        localStorage.setItem("pcm-settings", JSON.stringify(s));
-      } catch(e) {}
-    </script>
     <title>PCM — Project Code Management</title>
   </head>
   <body>
