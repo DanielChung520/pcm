@@ -123,12 +123,10 @@ export async function serveCommand(port: number): Promise<void> {
       env: { ...process.env, TERM: 'xterm-256color' },
       cwd: process.env.HOME || '/tmp',
     });
-    ws.on('message', (data) => {
-      console.error('[Terminal] Input:', JSON.stringify(data.toString().substring(0, 50)));
-      shell.stdin.write(data.toString());
-    });
-    shell.stdout.on('data', (data) => { try { ws.send(data.toString()); } catch {} });
-    shell.stderr.on('data', (data) => { try { ws.send(data.toString()); } catch {} });
+    ws.on('message', (data) => shell.stdin.write(data.toString()));
+    const fixNL = (raw: string) => raw.replace(/\n/g, '\r\n');
+    shell.stdout.on('data', (data) => { try { ws.send(fixNL(data.toString())); } catch {} });
+    shell.stderr.on('data', (data) => { try { ws.send(fixNL(data.toString())); } catch {} });
     ws.on('close', () => shell.kill());
     shell.on('exit', () => ws.close());
   });
