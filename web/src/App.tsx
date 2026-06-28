@@ -54,6 +54,9 @@ function App() {
     return () => mq.removeEventListener("change", handler);
   }, [settings.theme]);
 
+  // mount 時再次確保主題正確（防止 hydration 覆蓋）
+  useEffect(() => { applyTheme(settings.theme); }, []);
+
   // 設定變更時持久化 + 立即套用
   const handleSettingsChange = useCallback((s: Settings) => {
     setSettings(s);
