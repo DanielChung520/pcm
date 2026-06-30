@@ -119,7 +119,31 @@ export async function serveCommand(port: number): Promise<void> {
   const wss = new WebSocketServer({ server });
   wss.on('connection', (ws) => {
     console.error('[Terminal] New connection');
-    const shell = spawn(process.env.SHELL || '/bin/bash', ['-i'], {
+    const shell = spawn('/usr/bin/python3', ['-c', `
+import pty, os, select, sys, signal
+signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+
+pid, fd = pty.fork()
+if pid == 0:
+    os.execve('/bin/bash', ['/bin/bash', '-i'], os.environ)
+else:
+    try:
+        while True:
+            r, w, e = select.select([fd, sys.stdin], [], [])
+            for s in r:
+                if s == fd:
+                    data = os.read(fd, 65536)
+                    if not data: raise EOFError
+                    sys.stdout.buffer.write(data)
+                    sys.stdout.buffer.flush()
+                elif s == sys.stdin:
+                    data = os.read(sys.stdin.fileno(), 65536)
+                    if not data: raise EOFError
+                    os.write(fd, data)
+    except:
+        os.close(fd)
+        os.waitpid(pid, 0)
+    `], {
       env: {
         ...process.env,
         TERM: 'xterm-256color',
@@ -129,8 +153,7 @@ export async function serveCommand(port: number): Promise<void> {
     });
     ws.on('message', (data) => shell.stdin.write(data.toString()));
     const fixNL = (raw: string) => raw.replace(/\n/g, '\r\n');
-    shell.stdout.on('data', (data) => { try { ws.send(fixNL(data.toString())); } catch {} });
-    shell.stderr.on('data', (data) => { try { ws.send(fixNL(data.toString())); } catch {} });
+    shell.stdout.on('data', (data) => { try { ws.send(data.toString()); } catch {} });
     ws.on('close', () => shell.kill());
     shell.on('exit', () => ws.close());
   });
