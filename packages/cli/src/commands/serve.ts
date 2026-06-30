@@ -120,7 +120,11 @@ export async function serveCommand(port: number): Promise<void> {
   wss.on('connection', (ws) => {
     console.error('[Terminal] New connection');
     const shell = spawn(process.env.SHELL || '/bin/bash', ['-i'], {
-      env: { ...process.env, TERM: 'xterm-256color' },
+      env: {
+        ...process.env,
+        TERM: 'xterm-256color',
+        PATH: `${process.env.HOME}/.opencode/bin:${process.env.PATH || '/usr/bin:/bin'}`,
+      },
       cwd: process.env.HOME || '/tmp',
     });
     ws.on('message', (data) => shell.stdin.write(data.toString()));
