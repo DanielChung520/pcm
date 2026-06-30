@@ -59,7 +59,7 @@ export function TerminalPanel() {
         try {
           const cols = term.cols;
           const rows = term.rows;
-          ws.send(`\x00SIZE:${cols},${rows}\n`);
+          ws.send(`\x00SIZE:${cols},${rows}`);
         } catch {}
       }
     });

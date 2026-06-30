@@ -132,7 +132,6 @@ if pid == 0:
     os.execve('/bin/bash', ['/bin/bash', '-i'], os.environ)
 else:
     set_size(fd, 120, 40)
-    buffer = b""
     try:
         while True:
             r, w, e = select.select([fd, sys.stdin], [], [])
@@ -145,18 +144,13 @@ else:
                 elif s == sys.stdin:
                     data = os.read(sys.stdin.fileno(), 65536)
                     if not data: raise EOFError
-                    buffer += data
-                    # Check for resize commands: \\x00SIZE:cols,rows\\n
-                    while b"\\n" in buffer:
-                        line, buffer = buffer.split(b"\\n", 1)
-                        if line.startswith(b"\\x00SIZE:"):
-                            parts = line[6:].split(b",")
-                            if len(parts) == 2:
-                                try:
-                                    set_size(fd, int(parts[0]), int(parts[1]))
-                                except: pass
-                        else:
-                            os.write(fd, line + b"\\n")
+                    # Resize command or regular input
+                    if data.startswith(b'\\x00SIZE:'):
+                        parts = data[6:].strip().split(b',')
+                        if len(parts) == 2:
+                            set_size(fd, int(parts[0]), int(parts[1]))
+                    else:
+                        os.write(fd, data)
     except:
         os.close(fd)
         os.waitpid(pid, 0)
