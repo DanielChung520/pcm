@@ -118,15 +118,21 @@ export async function serveCommand(port: number): Promise<void> {
   // WebSocket terminal server
   const wss = new WebSocketServer({ server });
   wss.on('connection', (ws) => {
-    console.error('[Terminal] New connection');
     const shell = spawn('/usr/bin/python3', ['-c', `
-import pty, os, select, sys, signal
+import pty, os, select, sys, signal, struct, fcntl, termios
 signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+
+# Set initial terminal size (cols, rows)
+def set_size(fd, cols, rows):
+    winsize = struct.pack("HHHH", rows, cols, 0, 0)
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, winsize)
 
 pid, fd = pty.fork()
 if pid == 0:
     os.execve('/bin/bash', ['/bin/bash', '-i'], os.environ)
 else:
+    set_size(fd, 120, 40)
+    buffer = b""
     try:
         while True:
             r, w, e = select.select([fd, sys.stdin], [], [])
@@ -139,7 +145,18 @@ else:
                 elif s == sys.stdin:
                     data = os.read(sys.stdin.fileno(), 65536)
                     if not data: raise EOFError
-                    os.write(fd, data)
+                    buffer += data
+                    # Check for resize commands: \\x00SIZE:cols,rows\\n
+                    while b"\\n" in buffer:
+                        line, buffer = buffer.split(b"\\n", 1)
+                        if line.startswith(b"\\x00SIZE:"):
+                            parts = line[6:].split(b",")
+                            if len(parts) == 2:
+                                try:
+                                    set_size(fd, int(parts[0]), int(parts[1]))
+                                except: pass
+                        else:
+                            os.write(fd, line + b"\\n")
     except:
         os.close(fd)
         os.waitpid(pid, 0)

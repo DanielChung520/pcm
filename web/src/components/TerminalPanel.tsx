@@ -52,8 +52,17 @@ export function TerminalPanel() {
       }
     });
 
-    // Resize
-    const resizeObserver = new ResizeObserver(() => { fitAddon.fit(); });
+    // Resize observer: fit xterm + send new dimensions to PTY
+    const resizeObserver = new ResizeObserver(() => {
+      fitAddon.fit();
+      if (ws.readyState === WebSocket.OPEN) {
+        try {
+          const cols = term.cols;
+          const rows = term.rows;
+          ws.send(`\x00SIZE:${cols},${rows}\n`);
+        } catch {}
+      }
+    });
     resizeObserver.observe(containerRef.current);
 
     return () => {
