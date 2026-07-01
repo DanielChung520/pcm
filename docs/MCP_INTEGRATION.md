@@ -118,51 +118,112 @@ Auth:      無需認證（可搭配 Cloudflare Tunnel 保護）
 
 ## 使用場景
 
+## 架構
+
+```mermaid
+flowchart TB
+    subgraph client["遠端開發機"]
+        OC[OpenCode / Cursor / Claude Code]
+    end
+
+    subgraph pcm["PCM 服務 (pcm.aiconn.ai)"]
+        MCP[MCP Server<br/>POST /mcp]
+        API[HTTP API<br/>:56521]
+        WEB[Web UI<br/>:56520]
+    end
+
+    subgraph infra["基礎建設"]
+        AR[ArangoDB :8529<br/>code graph + 對話知識]
+        QD[Qdrant :6333<br/>向量搜尋]
+        VL[vLLM :18001<br/>Qwen3-8B-AWQ]
+    end
+
+    OC -->|"MCP JSON-RPC"| MCP
+    MCP --> AR
+    MCP --> VL
+    API --> AR
+    WEB --> API
+```
+
+## 核心閉環（maGraphRAG）
+
+```mermaid
+flowchart LR
+    A["👤 開發者提問<br/>「這個函數做什麼？」"] --> B["🔍 pcm_query<br/>搜尋 ArangoDB 符號"]
+    B --> C["🧠 vLLM 回答<br/>結合程式碼上下文"]
+    C --> D["📝 記錄對話<br/>conv_messages"]
+    C --> E["🔄 maGraphRAG 異步萃取<br/>vLLM 提取事實/關聯"]
+    E --> F["💾 conv_knowledge<br/>獨立存儲，re-scan 安全"]
+    F -.->|"下次查詢更精準"| B
+
+    style A fill:#6366f1,color:#fff
+    style C fill:#22c55e,color:#fff
+    style F fill:#f59e0b,color:#000
+```
+
+## 使用流程
+
 ### 場景 1：理解陌生專案
 
-```
-你在 OpenCode 中問：
-"這個專案的認證機制是怎麼運作的？"
+```mermaid
+sequenceDiagram
+    actor Dev as 開發者
+    participant AI as AI Coder
+    participant PCM as PCM MCP
+    participant AR as ArangoDB
+    participant LLM as vLLM
 
-OpenCode 自動呼叫 pcm_query →
-→ 搜尋 ArangoDB 中的 auth 相關符號
-→ 取得依賴關係上下文
-→ vLLM 回答，解釋認證流程
+    Dev->>AI: 這個專案的認證機制怎麼運作？
+    AI->>PCM: pcm_query("auth service")
+    PCM->>AR: 搜尋 auth 相關符號
+    AR-->>PCM: PluginManager, AuthService
+    PCM->>LLM: 傳入上下文 + 提問
+    LLM-->>PCM: 回答認證機制說明
+    PCM-->>AI: JSON-RPC 回應
+    AI-->>Dev: 認證流程是這樣的...
+    
+    Note over PCM: maGraphRAG 異步萃取知識
 ```
 
 ### 場景 2：安全修改代碼
 
-```
-你在 OpenCode 中：
-"幫我把 getUser 函數改成支援多用戶查詢"
-
-OpenCode 自動呼叫 pcm_impact("getUser") →
-→ 回報：「getUser 被 12 個檔案引用，修改需注意...」
-→ AI 根據影響分析結果，安全地進行修改
+```mermaid
+sequenceDiagram
+    actor Dev as 開發者
+    participant AI as AI Coder
+    participant PCM as PCM MCP
+    
+    Dev->>AI: 幫我把 getUser 改成支援多用戶
+    AI->>PCM: pcm_impact("getUser")
+    PCM-->>AI: 12 個檔案依賴 getUser
+    AI->>PCM: pcm_lookup("getUser")
+    PCM-->>AI: 位於 src/services/user.ts, L45
+    AI->>Dev: getUser 被 12 個檔案引用，修改時要小心
+    
+    Note over AI: AI 根據影響分析結果<br/>安全地進行修改
 ```
 
 ### 場景 3：知識累積（maGraphRAG）
 
-```
-每次 OpenCode 與你對話關於程式碼時：
-1. 對話自動記錄到 conv_messages
-2. vLLM 非同步萃取關鍵事實和關聯
-3. 寫入 conv_knowledge（與 code graph 隔離，re-scan 安全）
-4. 下次查詢時，知識更豐富、回答更精準
-```
+```mermaid
+sequenceDiagram
+    participant AI as AI Coder
+    participant PCM as PCM MCP
+    participant LLM as vLLM
+    participant AR as ArangoDB
 
-## 架構
+    AI->>PCM: pcm_query("PluginManager")
+    PCM->>LLM: 回答問題
+    LLM-->>PCM: 回答內容
+    PCM-->>AI: 回答
 
-```
-你的 AI Coding 工具 (OpenCode/Cursor/Claude Code/...)
-  │
-  │ MCP JSON-RPC over HTTPS
-  ▼
-pcm.aiconn.ai/mcp
-  │
-  ├─ ArangoDB :8529  ── 程式碼圖譜 + 對話知識
-  ├─ Qdrant    :6333  ── 向量搜尋
-  └─ vLLM      :18001 ── Qwen3-8B-AWQ (DGX Spark GPU)
+    Note over PCM: 非同步知識萃取開始
+
+    PCM->>LLM: 從對話中萃取事實
+    LLM-->>PCM: [{entity:"PluginManager", fact:"負責插件生命周期..."}]
+    PCM->>AR: 寫入 conv_knowledge
+
+    Note over AR: 知識永久保留<br/>下次查詢可檢索
 ```
 
 ## 安全建議
