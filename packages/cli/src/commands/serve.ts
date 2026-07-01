@@ -237,6 +237,105 @@ Output ONLY JSON array of objects: [{"entity":"name","type":"function|class|file
           } catch (err) { res.end(JSON.stringify({ error: String(err) })); }
         });
       }
+      else if (urlPath === '/mcp' && req.method === 'POST') {
+        let body = '';
+        req.on('data', (chunk: string) => body += chunk);
+        req.on('end', async () => {
+          let rpc: any = null;
+          try {
+            try { rpc = JSON.parse(body); } catch { res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } })); return; }
+            if (rpc.method === 'tools/list') {
+              res.end(JSON.stringify({ jsonrpc: '2.0', id: rpc.id, result: { tools: [
+                { name: 'pcm_project_list', description: '列出所有已註冊專案', inputSchema: { type: 'object', properties: {} } },
+                { name: 'pcm_project_status', description: '查看專案掃描狀態與統計', inputSchema: { type: 'object', properties: { project: { type: 'string' } }, required: ['project'] } },
+                { name: 'pcm_scan', description: '掃描專案目錄，生成代碼圖譜', inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } },
+                { name: 'pcm_graph', description: '獲取專案依賴圖', inputSchema: { type: 'object', properties: { project: { type: 'string' } }, required: ['project'] } },
+                { name: 'pcm_lookup', description: '查找程式碼中的符號', inputSchema: { type: 'object', properties: { project: { type: 'string' }, name: { type: 'string' } }, required: ['project', 'name'] } },
+                { name: 'pcm_hotspots', description: '列出複雜度熱點', inputSchema: { type: 'object', properties: { project: { type: 'string' }, limit: { type: 'number', default: 10 } }, required: ['project'] } },
+                { name: 'pcm_impact', description: '影響分析', inputSchema: { type: 'object', properties: { project: { type: 'string' }, target: { type: 'string' } }, required: ['project', 'target'] } },
+                { name: 'pcm_cycles', description: '檢測循環依賴', inputSchema: { type: 'object', properties: { project: { type: 'string' } }, required: ['project'] } },
+                { name: 'pcm_query', description: 'GraphRAG 問答：根據程式碼上下文回答問題', inputSchema: { type: 'object', properties: { question: { type: 'string' }, project: { type: 'string' } }, required: ['question'] } },
+              ] } }));
+            } else if (rpc.method === 'tools/call') {
+              const { name, arguments: args } = rpc.params;
+              let result = { content: [{ type: 'text', text: '' }] };
+              const projects = await storage.listProjects();
+
+              switch (name) {
+                case 'pcm_project_list':
+                  result.content[0].text = JSON.stringify(projects, null, 2);
+                  break;
+                case 'pcm_project_status': {
+                  const p = projects.find(x => x.name === args.project || x.id === args.project);
+                  result.content[0].text = JSON.stringify(p || { error: 'not found' }, null, 2);
+                  break;
+                }
+                case 'pcm_graph': {
+                  const p = projects.find(x => x.name === args.project || x.id === args.project);
+                  if (p) {
+                    const g = await storage.getGraph(p.id);
+                    result.content[0].text = JSON.stringify(g ? { nodes: g.stats.fileCount, edges: g.stats.relationshipCount } : { error: 'no graph' }, null, 2);
+                  } else result.content[0].text = JSON.stringify({ error: 'not found' });
+                  break;
+                }
+                case 'pcm_lookup': {
+                  const p = projects.find(x => x.name === args.project || x.id === args.project);
+                  if (p) {
+                    const syms = await storage.querySymbols({ projectId: p.id, name: args.name, limit: 20 });
+                    result.content[0].text = JSON.stringify(syms, null, 2);
+                  } else result.content[0].text = '[]';
+                  break;
+                }
+                case 'pcm_hotspots': {
+                  const p = projects.find(x => x.name === args.project || x.id === args.project);
+                  if (p) {
+                    const g = await storage.getGraph(p.id);
+                    result.content[0].text = JSON.stringify(g?.stats.hotspots?.slice(0, args.limit || 10) || [], null, 2);
+                  } else result.content[0].text = '[]';
+                  break;
+                }
+                case 'pcm_impact': {
+                  const { ImpactAnalyzer } = await import('@pcm/scanner');
+                  const analyzer = new ImpactAnalyzer(storage);
+                  const p = projects.find(x => x.name === args.project || x.id === args.project);
+                  const report = await analyzer.analyze(p?.id || '', args.target);
+                  result.content[0].text = JSON.stringify(report, null, 2);
+                  break;
+                }
+                case 'pcm_cycles': {
+                  const { detectCycles: dc } = await import('@pcm/scanner');
+                  const p = projects.find(x => x.name === args.project || x.id === args.project);
+                  const cycles = await dc(storage, p?.id || '');
+                  result.content[0].text = JSON.stringify({ cycles }, null, 2);
+                  break;
+                }
+                case 'pcm_query': {
+                  // Reuse the GraphRAG query logic
+                  const target = projects.find(x => x.name === args.project || x.id === args.project) || projects[0];
+                  const syms = await storage.querySymbols({ projectId: target.id, limit: 200 });
+                  const kw = (args.question as string).split(/\s+/).filter((k: string) => k.length > 2);
+                  const matched = syms.filter((s: any) => kw.some((k: string) => s.name.toLowerCase().includes(k.toLowerCase())));
+                  const graph = await storage.getGraph(target.id);
+                  const ctx = matched.slice(0, 10).map((s: any) => `- ${s.name} (${s.type}) in ${s.filePath}`).join('\n');
+                  const llmResp = await fetch('http://localhost:18001/v1/chat/completions', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model: '/home/daniel/.dllm/models/Qwen3-8B-AWQ', messages: [
+                      { role: 'system', content: 'You are a code expert. Answer concisely based on the context.' },
+                      { role: 'user', content: `Project symbols:\n${ctx}\n\nQuestion: ${args.question}` }
+                    ], temperature: 0.3, max_tokens: 1024 }),
+                  });
+                  const ld = await llmResp.json() as any;
+                  result.content[0].text = ld?.choices?.[0]?.message?.content || 'No response';
+                  break;
+                }
+              }
+              res.end(JSON.stringify({ jsonrpc: '2.0', id: rpc.id, result }));
+            } else {
+              res.end(JSON.stringify({ jsonrpc: '2.0', id: rpc.id, error: { code: -32601, message: `Unknown method: ${rpc.method}` } }));
+            }
+          } catch (err) { res.end(JSON.stringify({ jsonrpc: '2.0', id: rpc.id, error: { code: -32000, message: String(err) } })); }
+        });
+      }
       else { res.writeHead(404); res.end(JSON.stringify({ error: 'not found' })); }
     } catch (err) {
       res.writeHead(500); res.end(JSON.stringify({ error: String(err) }));
