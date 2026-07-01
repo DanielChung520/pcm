@@ -171,22 +171,67 @@ export async function serveCommand(port: number): Promise<void> {
             const llmData: { choices?: { message?: { content?: string } }[] } = await llmResponse.json();
             const answer = llmData?.choices?.[0]?.message?.content || 'No response';
 
-            // 4. 記錄對話到 ArangoDB
+            // 4. 記錄對話
+            const sessionId = randomUUID();
             try {
               const { Database } = await import('arangojs');
               const convDb = new Database({ url: 'http://localhost:8529' });
               convDb.useBasicAuth('root', '');
-              const convCol = convDb.database('pcm').collection('conv_messages');
-              await convCol.save({
-                _key: randomUUID(),
+              const pcmDb = convDb.database('pcm');
+              await pcmDb.collection('conv_messages').save({
+                _key: sessionId,
                 project: targetProject.name,
                 question,
                 answer,
-                context: contextLines.slice(0, 5),
                 symbols: symbols.map(s => s.name),
                 createdAt: new Date().toISOString(),
               });
             } catch {}
+
+            // 5. maGraphRAG: 非同步萃取知識補強圖譜
+            setImmediate(async () => {
+              try {
+                const extractResp = await fetch('http://localhost:18001/v1/chat/completions', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    model: '/home/daniel/.dllm/models/Qwen3-8B-AWQ',
+                    messages: [{
+                      role: 'system',
+                      content: `Extract key facts and relationships from this Q&A about a codebase.
+Output ONLY JSON array of objects: [{"entity":"name","type":"function|class|file|concept","fact":"what was learned","relates_to":["other_entity"]}]`
+                    }, {
+                      role: 'user',
+                      content: `Question: ${question}\n\nAnswer: ${answer.slice(0, 2000)}\n\nSymbols: ${symbols.map(s => s.name + ' (' + s.type + ')').join(', ')}`
+                    }],
+                    temperature: 0.1,
+                    max_tokens: 1024,
+                  }),
+                });
+                const extData = await extractResp.json();
+                const raw = extData?.choices?.[0]?.message?.content || '';
+                const jsonMatch = raw.match(/\[[\s\S]*\]/);
+                if (jsonMatch) {
+                  const facts = JSON.parse(jsonMatch[0]);
+                  const { Database } = await import('arangojs');
+                  const convDb = new Database({ url: 'http://localhost:8529' });
+                  convDb.useBasicAuth('root', '');
+                  const knowCol = convDb.database('pcm').collection('conv_knowledge');
+                  for (const f of facts.slice(0, 10)) {
+                    await knowCol.save({
+                      _key: randomUUID(),
+                      sessionId,
+                      project: targetProject.name,
+                      entity: f.entity,
+                      type: f.type || 'concept',
+                      fact: f.fact,
+                      relatesTo: f.relates_to || [],
+                      createdAt: new Date().toISOString(),
+                    });
+                  }
+                }
+              } catch {}
+            });
 
             res.end(JSON.stringify({ question, answer, symbols: symbols.length, project: targetProject.name }));
           } catch (err) { res.end(JSON.stringify({ error: String(err) })); }

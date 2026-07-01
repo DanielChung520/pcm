@@ -28,6 +28,8 @@ export class ArangoDBAdapter implements StorageAdapter {
     if (!(await relCol.exists())) await this.db.createEdgeCollection('relationships');
     const msgCol = this.db.collection('conv_messages');
     if (!(await msgCol.exists())) await msgCol.create();
+    const knowCol = this.db.collection('conv_knowledge');
+    if (!(await knowCol.exists())) await knowCol.create();
   }
 
   async close(): Promise<void> { this.db = null; }
