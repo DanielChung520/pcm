@@ -101,6 +101,97 @@ export async function serveCommand(port: number): Promise<void> {
           } catch (err) { res.end(JSON.stringify({ error: String(err) })); }
         });
       }
+      else if (urlPath === '/api/query' && req.method === 'POST') {
+        let body = '';
+        req.on('data', (chunk: string) => body += chunk);
+        req.on('end', async () => {
+          try {
+            const { question, project: projName } = JSON.parse(body);
+            if (!question) { res.end(JSON.stringify({ error: 'question required' })); return; }
+
+            // 1. 從 ArangoDB 搜尋相關符號
+            const projects = await storage.listProjects();
+            const targetProject = projName
+              ? projects.find(p => p.name === projName)
+              : projects[0];
+            if (!targetProject) { res.end(JSON.stringify({ error: 'no project' })); return; }
+
+            // 取前 200 個符號，再用關鍵字過濾
+            let symbols = await storage.querySymbols({ projectId: targetProject.id, limit: 200 });
+            const keywords = question.split(/\s+/).filter((k: string) => k.length > 2);
+            if (keywords.length > 0) {
+              symbols = symbols.filter((s: any) =>
+                keywords.some((k: string) =>
+                  s.name.toLowerCase().includes(k.toLowerCase())
+                )
+              );
+            }
+
+            // 2. 取得符號所在的檔案內容和關係
+            const graph = await storage.getGraph(targetProject.id);
+            const contextLines: string[] = [`Project: ${targetProject.name}`];
+            contextLines.push(`Question: ${question}`);
+            contextLines.push('');
+
+            const addedFiles = new Set<string>();
+            for (const sym of symbols.slice(0, 10)) {
+              const fpath = sym.filePath;
+              if (!addedFiles.has(fpath)) {
+                addedFiles.add(fpath);
+                const rels = graph?.relationships.filter(r =>
+                  (r.sourceId === sym.id || r.targetId === sym.id) && r.type === 'imports'
+                ) || [];
+                contextLines.push(`File: ${fpath}`);
+                contextLines.push(`  Symbols: ${sym.name} (${sym.type})`);
+                if (rels.length > 0) {
+                  const targets = rels.map(r => {
+                    const t = graph?.symbols.find(s => s.id === r.targetId);
+                    return t?.filePath || r.targetId;
+                  }).filter(Boolean);
+                  contextLines.push(`  Imports: ${[...new Set(targets)].join(', ')}`);
+                }
+                contextLines.push('');
+              }
+            }
+
+            // 3. 呼叫 dllm
+            const llmResponse = await fetch('http://localhost:11400/v1/chat/completions', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: 'Qwen3-Coder-30B-A3B-Instruct',
+                messages: [
+                  { role: 'system', content: 'You are a code analysis expert. Use the provided code context to answer the question.' },
+                  { role: 'user', content: `Code Context:\n${contextLines.join('\n').slice(0, 8000)}\n\nQuestion: ${question}` },
+                ],
+                temperature: 0.3,
+                max_tokens: 2048,
+              }),
+            });
+            const llmData: { choices?: { message?: { content?: string } }[] } = await llmResponse.json();
+            const answer = llmData?.choices?.[0]?.message?.content || 'No response';
+
+            // 4. 記錄對話到 ArangoDB
+            try {
+              const { Database } = await import('arangojs');
+              const convDb = new Database({ url: 'http://localhost:8529' });
+              convDb.useBasicAuth('root', '');
+              const convCol = convDb.database('pcm').collection('conv_messages');
+              await convCol.save({
+                _key: randomUUID(),
+                project: targetProject.name,
+                question,
+                answer,
+                context: contextLines.slice(0, 5),
+                symbols: symbols.map(s => s.name),
+                createdAt: new Date().toISOString(),
+              });
+            } catch {}
+
+            res.end(JSON.stringify({ question, answer, symbols: symbols.length, project: targetProject.name }));
+          } catch (err) { res.end(JSON.stringify({ error: String(err) })); }
+        });
+      }
       else { res.writeHead(404); res.end(JSON.stringify({ error: 'not found' })); }
     } catch (err) {
       res.writeHead(500); res.end(JSON.stringify({ error: String(err) }));
