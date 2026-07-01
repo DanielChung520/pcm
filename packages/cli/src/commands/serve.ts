@@ -154,12 +154,12 @@ export async function serveCommand(port: number): Promise<void> {
               }
             }
 
-            // 3. 呼叫 dllm
-            const llmResponse = await fetch('http://localhost:11400/v1/chat/completions', {
+            // 3. 呼叫 vLLM（直接連 18001）
+            const llmResponse = await fetch('http://localhost:18001/v1/chat/completions', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                model: 'Qwen3-Coder-30B-A3B-Instruct',
+                model: '/home/daniel/.dllm/models/Qwen3-8B-AWQ',
                 messages: [
                   { role: 'system', content: 'You are a code analysis expert. Use the provided code context to answer the question.' },
                   { role: 'user', content: `Code Context:\n${contextLines.join('\n').slice(0, 8000)}\n\nQuestion: ${question}` },
